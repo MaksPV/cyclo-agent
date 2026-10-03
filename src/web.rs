@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::{Query, State};
+use axum::extract::{ConnectInfo, Query, State};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Json};
 use tokio::sync::RwLock;
@@ -16,15 +18,31 @@ pub struct App {
     pub store: Store,
     pub cfg: Config,
     pub status: Arc<RwLock<SchedStatus>>,
-    pub wake: Arc<tokio::sync::Notify>,
+    /// Неудачные логины по IP для rate limit.
+    pub login_fails: Arc<std::sync::Mutex<HashMap<std::net::IpAddr, Vec<std::time::Instant>>>>,
 }
 
 const COOKIE: &str = "cyclo_session";
 const SESSION_TTL_SECS: i64 = 12 * 3600;
+/// Максимум тела расписания (POST schedule/validate): расписания больше не бывают.
+const MAX_SCHEDULE_BYTES: usize = 1_000_000;
+/// Окно /api/next: больше месяца за раз не разворачиваем (CPU-DoS).
+const MAX_WITHIN_SECS: i64 = 30 * 86_400;
+/// Логин: 5 неудач с IP за минуту — дальше 429.
+const LOGIN_FAILS: usize = 5;
+const LOGIN_WINDOW_SECS: u64 = 60;
 
 fn authed(cookies: &Cookies, app: &App) -> Option<i64> {
     let raw = cookies.get(COOKIE)?.value().to_owned();
     app.store.session_user(&hash_token(&raw), now_ms())
+}
+
+fn session_cookie(raw: String) -> Cookie<'static> {
+    Cookie::build((COOKIE, raw))
+        .http_only(true)
+        .path("/")
+        .same_site(cookie::SameSite::Lax)
+        .build()
 }
 
 pub fn router(app: App) -> axum::Router {
@@ -41,7 +59,6 @@ pub fn router(app: App) -> axum::Router {
             axum::routing::get(get_schedule).post(save_schedule),
         )
         .route("/api/validate", axum::routing::post(validate))
-        .route("/api/reload", axum::routing::post(reload))
         .route("/healthz", axum::routing::get(|| async { "ok" }))
         .layer(CookieManagerLayer::new())
         .with_state(app)
@@ -52,11 +69,19 @@ async fn index() -> Html<&'static str> {
 }
 
 async fn status(State(app): State<App>, cookies: Cookies) -> impl IntoResponse {
-    let st = app.status.read().await;
     let setup_required = !app.store.has_users();
+    let authenticated = authed(&cookies, &app).is_some();
+    if !authenticated {
+        // Анониму — только то, что нужно стартовому экрану (без путей сервера).
+        return Json(serde_json::json!({
+            "setup_required": setup_required,
+            "authenticated": false,
+        }));
+    }
+    let st = app.status.read().await;
     Json(serde_json::json!({
         "setup_required": setup_required,
-        "authenticated": authed(&cookies, &app).is_some(),
+        "authenticated": true,
         "schedule_valid": st.valid,
         "schedule_error": st.error,
         "schedule_name": st.name,
@@ -105,10 +130,7 @@ async fn setup(
     let (raw, digest) = new_session_token();
     app.store
         .create_session(&digest, uid, now, SESSION_TTL_SECS);
-    let mut c = Cookie::new(COOKIE, raw);
-    c.set_http_only(true);
-    c.set_path("/");
-    cookies.add(c);
+    cookies.add(session_cookie(raw));
     StatusCode::CREATED.into_response()
 }
 
@@ -118,34 +140,60 @@ struct LoginBody {
     password: String,
 }
 
+fn login_allowed(app: &App, ip: std::net::IpAddr) -> bool {
+    let mut map = app.login_fails.lock().expect("login fails");
+    let now = std::time::Instant::now();
+    let window = std::time::Duration::from_secs(LOGIN_WINDOW_SECS);
+    let fails = map.entry(ip).or_default();
+    fails.retain(|t| now.duration_since(*t) < window);
+    fails.len() < LOGIN_FAILS
+}
+
+fn login_failed(app: &App, ip: std::net::IpAddr) {
+    app.login_fails
+        .lock()
+        .expect("login fails")
+        .entry(ip)
+        .or_default()
+        .push(std::time::Instant::now());
+}
+
 async fn login(
     State(app): State<App>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     cookies: Cookies,
     Json(b): Json<LoginBody>,
 ) -> impl IntoResponse {
     if !app.store.has_users() {
         return (StatusCode::CONFLICT, "setup required".to_owned()).into_response();
     }
-    let Some((uid, hash)) = app.store.user_hash(&b.login) else {
+    if !login_allowed(&app, addr.ip()) {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            "too many attempts, try later".to_owned(),
+        )
+            .into_response();
+    }
+    let uid = app
+        .store
+        .user_hash(&b.login)
+        .filter(|(_, hash)| verify_password(&b.password, hash))
+        .map(|(id, _)| id);
+    let Some(uid) = uid else {
+        login_failed(&app, addr.ip());
         return (StatusCode::UNAUTHORIZED, "bad login".to_owned()).into_response();
     };
-    if !verify_password(&b.password, &hash) {
-        return (StatusCode::UNAUTHORIZED, "bad login".to_owned()).into_response();
-    }
     let (raw, digest) = new_session_token();
     app.store
         .create_session(&digest, uid, now_ms(), SESSION_TTL_SECS);
-    let mut c = Cookie::new(COOKIE, raw);
-    c.set_http_only(true);
-    c.set_path("/");
-    cookies.add(c);
+    cookies.add(session_cookie(raw));
     StatusCode::NO_CONTENT.into_response()
 }
 
 async fn logout(State(app): State<App>, cookies: Cookies) -> impl IntoResponse {
     if let Some(raw) = cookies.get(COOKIE).map(|c| c.value().to_owned()) {
         app.store.delete_session(&hash_token(&raw));
-        cookies.remove(Cookie::new(COOKIE, ""));
+        cookies.remove(Cookie::build((COOKIE, "")).path("/").build());
     }
     StatusCode::NO_CONTENT.into_response()
 }
@@ -189,7 +237,7 @@ async fn next(
     let within = q
         .within_secs
         .unwrap_or(app.cfg.lookahead_secs as i64)
-        .max(1)
+        .clamp(1, MAX_WITHIN_SECS)
         * 1000;
     match next_jobs(
         &app.cfg.schedule,
@@ -218,6 +266,9 @@ struct ScheduleBody {
 }
 
 fn check_content(content: &str, schedule_path: &std::path::Path) -> Result<(), String> {
+    if content.len() > MAX_SCHEDULE_BYTES {
+        return Err("schedule too large (max 1MB)".to_owned());
+    }
     let base = schedule_path
         .parent()
         .map(|p| p.to_path_buf())
@@ -235,7 +286,12 @@ async fn save_schedule(
         return StatusCode::UNAUTHORIZED.into_response();
     }
     if let Err(e) = check_content(&b.content, &app.cfg.schedule) {
-        return (StatusCode::BAD_REQUEST, e).into_response();
+        let code = if e.starts_with("schedule too large") {
+            StatusCode::PAYLOAD_TOO_LARGE
+        } else {
+            StatusCode::BAD_REQUEST
+        };
+        return (code, e).into_response();
     }
     if let Some(dir) = app.cfg.schedule.parent() {
         if !dir.as_os_str().is_empty() {
@@ -265,19 +321,5 @@ async fn validate(
             };
             Json(serde_json::json!({"ok": false, "code": code, "message": message})).into_response()
         }
-    }
-}
-
-async fn reload(State(app): State<App>, cookies: Cookies) -> impl IntoResponse {
-    if authed(&cookies, &app).is_none() {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-    // Перезагрузка ленивая: будим планировщик, он перечитает файл сам.
-    match std::fs::read_to_string(&app.cfg.schedule) {
-        Ok(_) => {
-            app.wake.notify_one();
-            StatusCode::NO_CONTENT.into_response()
-        }
-        Err(e) => (StatusCode::NOT_FOUND, e.to_string()).into_response(),
     }
 }

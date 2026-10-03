@@ -4,7 +4,8 @@ use std::path::PathBuf;
 pub struct Config {
     pub schedule: PathBuf,
     pub db: PathBuf,
-    pub listen: String,
+    /// Адрес веб-морды; None — демон без веба.
+    pub web: Option<String>,
     pub poll_secs: u64,
     pub lookahead_secs: u64,
     pub concurrency: usize,
@@ -16,7 +17,7 @@ impl Default for Config {
         Self {
             schedule: PathBuf::from("/etc/cyclo-agent/schedule.cyclo"),
             db: PathBuf::from("/var/lib/cyclo-agent/agent.db"),
-            listen: "127.0.0.1:8080".to_owned(),
+            web: None,
             poll_secs: 10,
             lookahead_secs: 60,
             concurrency: 4,
@@ -29,6 +30,7 @@ impl Default for Config {
 struct FileCfg {
     schedule: Option<PathBuf>,
     db: Option<PathBuf>,
+    web: Option<String>,
     listen: Option<String>,
     poll_secs: Option<u64>,
     lookahead_secs: Option<u64>,
@@ -53,8 +55,8 @@ impl Config {
                     if let Some(v) = f.db {
                         cfg.db = v;
                     }
-                    if let Some(v) = f.listen {
-                        cfg.listen = v;
+                    if let Some(v) = f.web.or(f.listen) {
+                        cfg.web = Some(v);
                     }
                     if let Some(v) = f.poll_secs {
                         cfg.poll_secs = v.max(1);

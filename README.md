@@ -11,8 +11,11 @@
 
 ```sh
 cargo build --release
-./target/release/cyclo-agent --schedule ./examples/schedule.cyclo \
-  --db ./agent.db --listen 127.0.0.1:8080
+# Только демон (без порта):
+./target/release/cyclo-agent run --schedule ./examples/schedule.cyclo --db ./agent.db
+# Демон + веб-морда:
+./target/release/cyclo-agent run --schedule ./examples/schedule.cyclo \
+  --db ./agent.db --web 127.0.0.1:8080
 ```
 
 Открыть http://127.0.0.1:8080 — при первом запуске страница `/setup`
@@ -24,7 +27,7 @@ cargo build --release
 ```toml
 schedule = "/etc/cyclo-agent/schedule.cyclo"
 db = "/var/lib/cyclo-agent/agent.db"
-listen = "127.0.0.1:8080"
+# web = "127.0.0.1:8080"  # без ключа — демон без веба
 poll_secs = 10        # сейчас не используется (сон до события)
 lookahead_secs = 60   # окно /api/next по умолчанию
 concurrency = 4
@@ -48,23 +51,24 @@ schedule "Agent" {
 }
 ```
 
-Планировщик спит до ближайшего события (`next`, точность ~мс),
-исполняет due-пачкой, дедуп — через `UNIQUE(job_key)`. Опоздание >60с
-пишется как `skipped` и не исполняется. Hot reload: правка файла (вотчер
-5с), `POST /api/reload`, SIGHUP; битый файл — старый план продолжает
-работать, ошибка видна в `/api/status`.
+Планировщик спит до ближайшего события (точность 0 мс по `started_at`),
+исполняет due-пачкой (до 50 000 одновременных), дедуп — через `UNIQUE(job_key)`
+плюс проверка перед спавном. Опоздание >60с пишется как `skipped` и не
+исполняется. Hot reload: правка файла (вотчер 5с), SIGHUP; битый файл —
+старый план продолжает работать, ошибка видна в `/api/status`.
 
-## API (всё, кроме `/healthz` и `/api/setup`, — по сессии)
+## API (всё, кроме `/`, `/healthz` и `/api/setup`, — по сессии)
 
 - `GET /` — дашборд (вшит в бинарь): runs, canvas-график latency,
   ближайшие, редактор с «Проверить»/«Сохранить» и шпаргалкой
 - `POST /api/setup {login,password,confirm}` — только при пустых users
-- `POST /api/login`, `POST /api/logout`
-- `GET /api/status`, `GET /healthz`
-- `GET /api/runs?from&to&limit`, `GET /api/next?n&within_secs`
-- `GET /api/schedule`, `POST /api/schedule {content}` (валидация перед записью)
-- `POST /api/validate {content}` → `{ok | code,message}`
-- `POST /api/reload` — разбудить планировщик
+- `POST /api/login`, `POST /api/logout` (брутфорс: 5 попыток/мин с IP → 429)
+- `GET /api/status` (анониму — только setup_required/authenticated), `GET /healthz`
+- `GET /api/runs?from&to&limit` (limit ≤ 1000), `GET /api/next?n≤500&within_secs≤30д`
+- `GET /api/schedule`, `POST /api/schedule {content}` (валидация перед записью, ≤1МБ)
+- `POST /api/validate {content}` → `{ok | code,message}` (≤1МБ)
+
+Сессии: HttpOnly + SameSite=Lax, TTL 12ч.
 
 ## Раскладка на сервере
 

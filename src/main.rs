@@ -6,57 +6,76 @@ mod scheduler;
 mod store;
 mod web;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use tokio::sync::{Notify, RwLock, Semaphore};
 
 #[derive(Parser)]
 #[command(
     name = "cyclo-agent",
-    about = "Daemon + web UI for Cyclorithm schedules"
+    about = "Daemon for Cyclorithm schedules (web UI optional)"
 )]
 struct Cli {
-    #[arg(long)]
+    #[arg(long, global = true)]
     config: Option<PathBuf>,
-    #[arg(long)]
-    schedule: Option<PathBuf>,
-    #[arg(long)]
-    db: Option<PathBuf>,
-    #[arg(long)]
-    listen: Option<String>,
     #[command(subcommand)]
-    cmd: Option<Cmd>,
+    cmd: Cmd,
 }
 
-#[derive(clap::Subcommand)]
+#[derive(Subcommand)]
 enum Cmd {
-    /// Reset auth: drop users + sessions (needs FS access to db).
-    ResetAuth,
+    /// Запустить планировщик (без --web — без веб-морды).
+    Run {
+        #[arg(long)]
+        schedule: Option<PathBuf>,
+        #[arg(long)]
+        db: Option<PathBuf>,
+        /// Адрес веб-морды, например 127.0.0.1:8080. Без флага — только демон.
+        #[arg(long)]
+        web: Option<String>,
+    },
+    /// Сбросить сессии (таблица sessions чистится целиком).
+    ResetAuth {
+        #[arg(long)]
+        db: Option<PathBuf>,
+    },
 }
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
     let cli = Cli::parse();
-    let mut cfg = config::Config::load(cli.config);
-    if let Some(v) = cli.schedule {
-        cfg.schedule = v;
+    match cli.cmd {
+        Cmd::ResetAuth { db } => {
+            let mut cfg = config::Config::load(cli.config);
+            if let Some(v) = db {
+                cfg.db = v;
+            }
+            let store = store::Store::open(&cfg.db).expect("open db");
+            store.clear_sessions();
+            println!("sessions cleared; delete users row in agent.db to re-run setup");
+        }
+        Cmd::Run { schedule, db, web } => {
+            let mut cfg = config::Config::load(cli.config);
+            if let Some(v) = schedule {
+                cfg.schedule = v;
+            }
+            if let Some(v) = db {
+                cfg.db = v;
+            }
+            if web.is_some() {
+                cfg.web = web;
+            }
+            run_daemon(cfg).await;
+        }
     }
-    if let Some(v) = cli.db {
-        cfg.db = v;
-    }
-    if let Some(v) = cli.listen {
-        cfg.listen = v;
-    }
+}
+
+async fn run_daemon(cfg: config::Config) {
     let store = store::Store::open(&cfg.db).expect("open db");
-    if matches!(cli.cmd, Some(Cmd::ResetAuth)) {
-        store.clear_sessions();
-        // Удаляем пользователей тоже, чтобы /setup открылся заново.
-        println!("sessions cleared; delete users row in agent.db to re-run setup");
-        return;
-    }
     // Дефолтное расписание-пример, чтобы первый запуск был живым.
     if std::fs::read_to_string(&cfg.schedule).is_err() {
         if let Some(dir) = cfg.schedule.parent() {
@@ -69,16 +88,10 @@ async fn main() {
     let status = Arc::new(RwLock::new(scheduler::SchedStatus::default()));
     let sem = Arc::new(Semaphore::new(cfg.concurrency));
     let wake = Arc::new(Notify::new());
-    let app = web::App {
-        store: store.clone(),
-        cfg: cfg.clone(),
-        status: status.clone(),
-        wake: wake.clone(),
-    };
     tokio::spawn(scheduler::run_loop(
         cfg.clone(),
-        store,
-        status,
+        store.clone(),
+        status.clone(),
         sem,
         wake.clone(),
     ));
@@ -96,11 +109,26 @@ async fn main() {
             }
         }
     });
-    let listener = tokio::net::TcpListener::bind(&cfg.listen)
-        .await
-        .expect("bind");
-    tracing::info!("listening on {}", cfg.listen);
-    axum::serve(listener, web::router(app))
-        .await
-        .expect("serve");
+    match cfg.web.clone() {
+        None => {
+            tracing::info!("no web UI (run with --web ADDR to enable)");
+            std::future::pending::<()>().await;
+        }
+        Some(addr) => {
+            let app = web::App {
+                store,
+                cfg: cfg.clone(),
+                status,
+                login_fails: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            };
+            let listener = tokio::net::TcpListener::bind(&addr).await.expect("bind");
+            tracing::info!("web UI on {addr}");
+            axum::serve(
+                listener,
+                web::router(app).into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .await
+            .expect("serve");
+        }
+    }
 }
