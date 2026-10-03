@@ -1,0 +1,14 @@
+schedule "Agent" {
+  point JOB {
+    actions = [fire];
+  }
+
+  cycle RUN(job) duration = 1m {
+    0m: JOB.fire() {"cmd": job.cmd, "args": job.args, "timeout_s": job.timeout_s};
+  }
+
+  root_cycle start_time = "2026-01-01T00:00:00", duration = 24h {
+    0h: repeat 24 RUN({"cmd": "/opt/jobs/ping.sh", "args": [], "timeout_s": 60});
+    3h: RUN({"cmd": "/usr/local/bin/backup.sh", "args": ["--incremental"], "timeout_s": 1800});
+  }
+}

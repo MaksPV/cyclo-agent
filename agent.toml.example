@@ -1,0 +1,8 @@
+# Пример конфига cyclo-agent. Путь по умолчанию: /etc/cyclo-agent/agent.toml
+schedule = "/etc/cyclo-agent/schedule.cyclo"
+db = "/var/lib/cyclo-agent/agent.db"
+listen = "127.0.0.1:8080"
+poll_secs = 10
+lookahead_secs = 60
+concurrency = 4
+retention_days = 90
