@@ -62,59 +62,72 @@ pub async fn run_loop(
     wake: Arc<Notify>,
 ) {
     let mut last_cleanup = 0i64;
+    // Пачка будущих событий, перенесённая через сон: после точного пробуждения
+    // исполняем её без повторного запроса к ядру (экономим ~15мс) — свежесть
+    // проверяем по mtime файла, дедуп — через UNIQUE(job_key).
+    let mut pending: Vec<crate::jobs::Job> = vec![];
+    let mut pending_mtime = file_mtime(&cfg.schedule);
     loop {
         let now = now_ms();
+        let mtime = file_mtime(&cfg.schedule);
         // Окно с перекрытием 2с назад: сон срабатывает в T+мс, а `[now, …)`
-        // событие ровно в T уже исключает. Дедуп — через UNIQUE(job_key).
+        // событие ровно в T уже исключает.
         let from = now - 2_000;
-        let due = match read_schedule(&cfg.schedule) {
-            Err(e) => {
-                *status.write().await = SchedStatus {
-                    valid: false,
-                    error: e,
-                    name: String::new(),
-                };
-                vec![]
-            }
-            Ok((text, base)) => {
-                match cyclorithm_core::pipeline::next_window(
-                    &text,
-                    &base,
-                    from,
-                    LOOKAHEAD_MS,
-                    BATCH,
-                    None,
-                ) {
-                    Err(e) => {
-                        *status.write().await = SchedStatus {
-                            valid: false,
-                            error: e.to_string(),
-                            name: String::new(),
-                        };
-                        vec![]
-                    }
-                    Ok(win) => {
-                        *status.write().await = SchedStatus {
-                            valid: true,
-                            error: String::new(),
-                            name: win.schedule.clone(),
-                        };
-                        win.events
-                            .iter()
-                            .filter_map(|ev| {
-                                to_job(ev.time, &ev.point, &ev.action, &ev.action_attrs)
-                            })
-                            .collect()
+        let due: Vec<crate::jobs::Job> = if mtime == pending_mtime && !pending.is_empty() {
+            std::mem::take(&mut pending)
+        } else {
+            pending.clear();
+            pending_mtime = mtime;
+            match read_schedule(&cfg.schedule) {
+                Err(e) => {
+                    *status.write().await = SchedStatus {
+                        valid: false,
+                        error: e,
+                        name: String::new(),
+                    };
+                    vec![]
+                }
+                Ok((text, base)) => {
+                    match cyclorithm_core::pipeline::next_window(
+                        &text,
+                        &base,
+                        from,
+                        LOOKAHEAD_MS,
+                        BATCH,
+                        None,
+                    ) {
+                        Err(e) => {
+                            *status.write().await = SchedStatus {
+                                valid: false,
+                                error: e.to_string(),
+                                name: String::new(),
+                            };
+                            vec![]
+                        }
+                        Ok(win) => {
+                            *status.write().await = SchedStatus {
+                                valid: true,
+                                error: String::new(),
+                                name: win.schedule.clone(),
+                            };
+                            win.events
+                                .iter()
+                                .filter_map(|ev| {
+                                    to_job(ev.time, &ev.point, &ev.action, &ev.action_attrs)
+                                })
+                                .collect()
+                        }
                     }
                 }
             }
         };
         let now = now_ms();
-        // Исполняем всё, чьё время пришло (обычно 0–1 событие).
+        // Исполняем всё, чьё время пришло (обычно 0–1 событие), будущее —
+        // в pending через сон.
         let mut next_at: Option<i64> = None;
-        for job in &due {
+        for job in due {
             if job.time <= now {
-                let key = crate::jobs::job_key(job);
+                let key = crate::jobs::job_key(&job);
                 if store.has_job_key(&key) {
                     continue; // уже исполнено/записано (перекрытие окна)
                 }
@@ -122,7 +135,7 @@ pub async fn run_loop(
                     let t = now_ms();
                     store.insert_run(&crate::store::Run {
                         id: 0,
-                        job_key: crate::jobs::job_key(job),
+                        job_key: key,
                         scheduled_at: job.time,
                         started_at: t,
                         finished_at: t,
@@ -137,15 +150,17 @@ pub async fn run_loop(
                 } else {
                     let store2 = store.clone();
                     let sem2 = sem.clone();
-                    let job2 = job.clone();
                     tokio::spawn(async move {
                         let _p = sem2.acquire_owned().await;
-                        let run = crate::executor::run_job(&job2).await;
+                        let run = crate::executor::run_job(&job).await;
                         store2.insert_run(&run);
                     });
                 }
-            } else if next_at.is_none_or(|t| job.time < t) {
-                next_at = Some(job.time);
+            } else {
+                if next_at.is_none_or(|t| job.time < t) {
+                    next_at = Some(job.time);
+                }
+                pending.push(job);
             }
         }
         if now - last_cleanup > 3_600_000 {
@@ -156,11 +171,29 @@ pub async fn run_loop(
         }
         match next_at {
             // Есть будущее событие — спим до него (вотчер/SIGHUP/API разбудят раньше).
+            // Точность: грубый сон до T-100мс, дальше дотягиваем короткими снами
+            // и yield — пробуждение в пределах ±1мс от решётки.
             Some(t) => {
                 let wait = (t - now_ms()).max(0) as u64;
-                tokio::select! {
-                    () = tokio::time::sleep(std::time::Duration::from_millis(wait)) => {}
-                    () = wake.notified() => {}
+                if wait > 150 {
+                    tokio::select! {
+                        () = tokio::time::sleep(std::time::Duration::from_millis(wait - 100)) => {}
+                        () = wake.notified() => { continue; }
+                    }
+                }
+                loop {
+                    let left = t - now_ms();
+                    if left <= 0 {
+                        break;
+                    }
+                    if left > 5 {
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            (left - 2).min(20) as u64
+                        ))
+                        .await;
+                    } else {
+                        tokio::task::yield_now().await;
+                    }
                 }
             }
             // Нечего исполнять — короткая пауза (ошибка файла, пусто, всё due).
