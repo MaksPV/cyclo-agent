@@ -1,0 +1,26 @@
+schedule "Complex" {
+  point JOB {
+    actions = [fire];
+  }
+
+  cycle RUN(job) duration = 1m {
+    0m: JOB.fire() {"cmd": job.cmd, "args": job.args, "timeout_s": job.timeout_s};
+  }
+
+  cycle HOURLY(task) duration = 1h {
+    0m: RUN(task);
+  }
+
+  cycle EVERY_5M(task) duration = 5m {
+    0m: RUN(task);
+  }
+
+  root_cycle start_time = "2026-01-01T00:00:00", duration = 24h {
+    0h: fill EVERY_5M({"cmd": "/bin/echo", "args": ["metrics"], "timeout_s": 10});
+    0h: fill HOURLY({"cmd": "/bin/echo", "args": ["ping"], "timeout_s": 10});
+    [workday(at)] 8h: repeat 11 HOURLY({"cmd": "/bin/echo", "args": ["cleanup"], "timeout_s": 10});
+    3h: RUN({"cmd": "/bin/echo", "args": ["backup"], "timeout_s": 10});
+    [day_of_week(at) == 1] 9h30m: RUN({"cmd": "/bin/echo", "args": ["report"], "timeout_s": 10});
+    12h: RUN({"cmd": "/bin/false", "args": [], "timeout_s": 10});
+  }
+}
