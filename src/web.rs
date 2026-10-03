@@ -59,6 +59,7 @@ pub fn router(app: App) -> axum::Router {
             axum::routing::get(get_schedule).post(save_schedule),
         )
         .route("/api/validate", axum::routing::post(validate))
+        .route("/api/password", axum::routing::post(password))
         .route("/healthz", axum::routing::get(|| async { "ok" }))
         .layer(CookieManagerLayer::new())
         .with_state(app)
@@ -70,22 +71,25 @@ async fn index() -> Html<&'static str> {
 
 async fn status(State(app): State<App>, cookies: Cookies) -> impl IntoResponse {
     let setup_required = !app.store.has_users();
-    let authenticated = authed(&cookies, &app).is_some();
-    if !authenticated {
+    let Some(uid) = authed(&cookies, &app) else {
         // Анониму — только то, что нужно стартовому экрану (без путей сервера).
         return Json(serde_json::json!({
             "setup_required": setup_required,
             "authenticated": false,
         }));
-    }
+    };
     let st = app.status.read().await;
     Json(serde_json::json!({
         "setup_required": setup_required,
         "authenticated": true,
+        "login": app.store.login_of(uid),
         "schedule_valid": st.valid,
         "schedule_error": st.error,
         "schedule_name": st.name,
         "schedule_path": app.cfg.schedule.to_string_lossy(),
+        "concurrency": app.cfg.concurrency,
+        "lookahead_secs": app.cfg.lookahead_secs,
+        "retention_days": app.cfg.retention_days,
         "now": now_ms(),
     }))
 }
@@ -261,8 +265,59 @@ async fn get_schedule(State(app): State<App>, cookies: Cookies) -> impl IntoResp
 }
 
 #[derive(serde::Deserialize)]
+struct PasswordBody {
+    current: String,
+    new: String,
+    confirm: String,
+}
+
+#[derive(serde::Deserialize)]
 struct ScheduleBody {
     content: String,
+}
+
+async fn password(
+    State(app): State<App>,
+    cookies: Cookies,
+    Json(b): Json<PasswordBody>,
+) -> impl IntoResponse {
+    let Some(uid) = authed(&cookies, &app) else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let raw = cookies
+        .get(COOKIE)
+        .map(|c| c.value().to_owned())
+        .unwrap_or_default();
+    let Some((_, hash)) = app
+        .store
+        .login_of(uid)
+        .and_then(|l| app.store.user_hash(&l))
+    else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    if !verify_password(&b.current, &hash) {
+        return (StatusCode::FORBIDDEN, "bad current password".to_owned()).into_response();
+    }
+    if b.new.len() < 8 {
+        return (
+            StatusCode::BAD_REQUEST,
+            "password too short (min 8)".to_owned(),
+        )
+            .into_response();
+    }
+    if b.new != b.confirm {
+        return (StatusCode::BAD_REQUEST, "passwords do not match".to_owned()).into_response();
+    }
+    let hash = match hash_password(&b.new) {
+        Ok(h) => h,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    };
+    if !app.store.update_password(uid, &hash) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, "no such user".to_owned()).into_response();
+    }
+    // Чужие сессии отваливаются, текущая живёт.
+    app.store.delete_other_sessions(uid, &hash_token(&raw));
+    StatusCode::NO_CONTENT.into_response()
 }
 
 fn check_content(content: &str, schedule_path: &std::path::Path) -> Result<(), String> {

@@ -109,6 +109,33 @@ impl Store {
         );
     }
 
+    pub fn update_password(&self, user_id: i64, hash: &str) -> bool {
+        self.lock()
+            .execute(
+                "UPDATE users SET password_hash=? WHERE id=?",
+                params![hash, user_id],
+            )
+            .map(|n| n == 1)
+            .unwrap_or(false)
+    }
+
+    pub fn delete_other_sessions(&self, user_id: i64, keep_hash: &str) {
+        let _ = self.lock().execute(
+            "DELETE FROM sessions WHERE user_id=? AND token_hash<>?",
+            params![user_id, keep_hash],
+        );
+    }
+
+    pub fn login_of(&self, user_id: i64) -> Option<String> {
+        self.lock()
+            .query_row(
+                "SELECT login FROM users WHERE id=?",
+                params![user_id],
+                |r| r.get(0),
+            )
+            .ok()
+    }
+
     pub fn delete_expired_sessions(&self, now: i64) {
         let _ = self
             .lock()

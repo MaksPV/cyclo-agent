@@ -1,70 +1,186 @@
 <!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>cyclo-agent</title>
-<style>body{font-family:system-ui,sans-serif;max-width:1000px;margin:2em auto;padding:0 1em}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:.3em .5em;font-size:13px}.ok{color:green}.fail,.timeout{color:red}textarea{width:100%;height:300px;font-family:monospace}#diag{white-space:pre-wrap;background:#f6f6f6;padding:.5em}section{margin-top:2em}canvas{width:100%;height:180px;border:1px solid #ccc}</style>
-</head><body>
-<h1>cyclo-agent</h1>
+<style>
+:root{
+  --bg:#f4f4f2; --card:#ffffff; --fg:#1d1d1f; --muted:#6b6b70;
+  --line:#dddcd8; --accent:#2f6fed; --ok:#1a7f37; --bad:#cf222e; --skip:#6b6b70;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+[data-theme="dark"]{
+  --bg:#161617; --card:#1e1e20; --fg:#e8e8e6; --muted:#9a9aa0;
+  --line:#333336; --accent:#6b9bff; --ok:#3fb950; --bad:#f85149; --skip:#9a9aa0;
+}
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);margin:0}
+header{display:flex;align-items:center;gap:.8em;padding:.7em 1.2em;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0}
+header h1{font-size:1.1em;margin:0 auto 0 0}
+.badge{font-size:.8em;padding:.15em .6em;border-radius:2em;border:1px solid var(--line);color:var(--muted)}
+.badge.ok{color:var(--ok);border-color:var(--ok)}
+.badge.bad{color:var(--bad);border-color:var(--bad)}
+button{font:inherit;padding:.35em .9em;border:1px solid var(--line);border-radius:.4em;background:var(--card);color:var(--fg);cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+input,select,textarea{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:.4em;padding:.35em .6em}
+main{max-width:1020px;margin:0 auto;padding:1.2em}
+nav.tabs{display:flex;gap:.3em;margin-bottom:1em}
+nav.tabs button{border:none;border-bottom:2px solid transparent;border-radius:0;padding:.5em 1em;color:var(--muted)}
+nav.tabs button.on{color:var(--fg);border-bottom-color:var(--accent);font-weight:600}
+.card{background:var(--card);border:1px solid var(--line);border-radius:.6em;padding:1em;margin-bottom:1em}
+.card h2{margin:.2em 0 .7em;font-size:1em}
+.muted{color:var(--muted);font-size:.85em}
+table{border-collapse:collapse;width:100%}
+td,th{border-bottom:1px solid var(--line);padding:.35em .5em;font-size:13px;text-align:left}
+.ok{color:var(--ok)} .fail,.timeout{color:var(--bad)} .skipped{color:var(--skip)}
+canvas{width:100%;height:170px}
+#sched{width:100%;height:320px;font-family:var(--mono);font-size:13px}
+#diag{white-space:pre-wrap;font-family:var(--mono);font-size:12px;background:var(--bg);border:1px solid var(--line);border-radius:.4em;padding:.6em;margin-top:.6em;min-height:2.5em}
+pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
+.row{display:flex;gap:.6em;align-items:center;flex-wrap:wrap}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1em}
+@media(max-width:700px){.grid2{grid-template-columns:1fr}}
+#dirty{color:var(--accent);font-size:.85em}
+</style></head><body>
+<header>
+  <h1>cyclo-agent</h1>
+  <span id="health" class="badge">…</span>
+  <button id="theme" onclick="toggleTheme()" title="тема">◐</button>
+</header>
+<main>
 <div id="auth"></div>
-<section id="dash" hidden>
-<h2>Статус</h2><div id="status"></div>
-<h2>Задержка выполнений (мс)</h2><canvas id="graph" width="900" height="180"></canvas>
-<h2>Последние запуски</h2><table><thead><tr><th>план</th><th>cmd</th><th>статус</th><th>exit</th><th>latency</th><th>stderr</th></tr></thead><tbody id="runs"></tbody></table>
-<h2>Ближайшие</h2><table><thead><tr><th>time(ms)</th><th>point.action</th><th>cmd</th></tr></thead><tbody id="next"></tbody></table>
-<h2>Расписание</h2>
-<textarea id="sched" spellcheck="false"></textarea><br>
-<button onclick="doValidate()">Проверить</button>
-<button onclick="doSave()">Сохранить</button>
-<button onclick="doLogout()">Выйти</button>
-<div id="diag"></div>
-<details><summary>Шпаргалка синтаксиса</summary><pre>
-schedule "Имя" {
+<div id="app" hidden>
+  <nav class="tabs">
+    <button id="t-events" class="on" onclick="tab('events')">События</button>
+    <button id="t-editor" onclick="tab('editor')">Редактор <span id="dirty" hidden>•</span></button>
+    <button id="t-settings" onclick="tab('settings')">Настройки</button>
+  </nav>
+
+  <section id="v-events">
+    <div class="card"><h2>Расписание</h2><div id="schedline" class="muted"></div></div>
+    <div class="card"><h2>Задержка выполнений, мс</h2><canvas id="graph" width="940" height="170"></canvas></div>
+    <div class="card"><h2>Последние запуски</h2>
+      <div class="row" style="margin-bottom:.5em">
+        <label class="muted">статус <select id="flt" onchange="loadRuns()"><option value="">все</option><option>ok</option><option>fail</option><option>timeout</option><option>skipped</option></select></label>
+      </div>
+      <table><thead><tr><th>план</th><th>cmd</th><th>статус</th><th>exit</th><th>мс</th><th>stderr</th></tr></thead><tbody id="runs"></tbody></table>
+    </div>
+    <div class="card"><h2>Ближайшие</h2>
+      <table><thead><tr><th>время</th><th>точка</th><th>cmd</th></tr></thead><tbody id="next"></tbody></table>
+    </div>
+  </section>
+
+  <section id="v-editor" hidden>
+    <div class="card"><h2>Расписание</h2>
+      <textarea id="sched" spellcheck="false"></textarea>
+      <div class="row" style="margin-top:.6em">
+        <button onclick="doValidate()">Проверить</button>
+        <button class="primary" onclick="doSave()">Сохранить</button>
+      </div>
+      <div id="diag"></div>
+      <details><summary>Шпаргалка синтаксиса</summary><pre class="cheat">schedule "Имя" {
   point JOB { actions = [fire]; }
   cycle RUN(job) duration = 1m {
     0m: JOB.fire() {"cmd": job.cmd, "args": job.args, "timeout_s": job.timeout_s};
   }
   root_cycle start_time = "2026-01-01T00:00:00", duration = 24h {
-    3h: RUN({"cmd": "/usr/local/bin/backup.sh", "args": [], "timeout_s": 1800});
-    0h: repeat 24 RUN({"cmd": "/opt/jobs/ping.sh", "args": [], "timeout_s": 60});
+    0h: fill RUN({"cmd": "/opt/jobs/ping.sh", "args": [], "timeout_s": 60});
+    3h: RUN({"cmd": "/usr/local/bin/backup.sh", "args": ["--incremental"], "timeout_s": 1800});
+    [workday(at)] 8h: repeat 11 RUN({"cmd": "/opt/jobs/clean.sh", "args": [], "timeout_s": 600});
+    [day_of_week(at) == 1] 9h30m: RUN({"cmd": "/opt/jobs/report.sh", "args": [], "timeout_s": 900});
   }
 }
-Длительности: ms s m h d w. Условия: [workday(at)], [day_of_week(at) == 1].
-Агент исполняет только строки с "cmd". Ошибки покажет «Проверить».
-</pre></details>
-</section>
+Длительности: ms s m h d w. Агент исполняет строки с "cmd".
+Ошибки покажет «Проверить» (код + текст как в CLI).</pre></details>
+    </div>
+  </section>
+
+  <section id="v-settings" hidden>
+    <div class="grid2">
+      <div class="card"><h2>Сервер</h2><div id="cfg" class="muted"></div></div>
+      <div class="card"><h2>Сессия</h2>
+        <div id="who" style="margin-bottom:.6em"></div>
+        <button onclick="doLogout()">Выйти</button>
+      </div>
+    </div>
+    <div class="card"><h2>Смена пароля</h2>
+      <div class="row">
+        <input id="pw0" type="password" placeholder="текущий" autocomplete="current-password">
+        <input id="pw1" type="password" placeholder="новый ≥8" autocomplete="new-password">
+        <input id="pw2" type="password" placeholder="повтор" autocomplete="new-password">
+        <button class="primary" onclick="doPasswd()">Сменить</button>
+      </div>
+      <div id="pwmsg" class="muted" style="margin-top:.5em"></div>
+    </div>
+  </section>
+</div>
+</main>
 <script>
-const api = (m,u,b)=>fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined}).then(async r=>({s:r.status,j:await r.json().catch(()=>null),t:await r.text().catch(()=> '')}));
+let cur = 'events', sched0 = '';
+function themeInit(){ document.documentElement.dataset.theme = localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); }
+function toggleTheme(){ const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = t; localStorage.setItem('theme', t); }
+function tab(n){ cur = n; for (const t of ['events','editor','settings']){ document.getElementById('v-'+t).hidden = t !== n; document.getElementById('t-'+t).classList.toggle('on', t === n); } if (n === 'events'){ loadRuns(); loadNext(); } if (n === 'editor'){ loadSched(); } }
+const j = (m,u,b)=>fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
 async function refresh(){
   const st = await fetch('/api/status').then(r=>r.json());
-  const box = document.getElementById('auth'), dash = document.getElementById('dash');
-  if(st.setup_required){ box.innerHTML = `<h2>Первый запуск</h2><input id=l placeholder=логин><input id=p type=password placeholder="пароль ≥8"><input id=c type=password placeholder=повтор><button onclick="setup()">Создать</button>`; dash.hidden = true; return; }
-  if(!st.authenticated){ box.innerHTML = `<h2>Вход</h2><input id=l placeholder=логин><input id=p type=password placeholder=пароль><button onclick="login()">Войти</button>`; dash.hidden = true; return; }
-  box.innerHTML=''; dash.hidden=false;
-  document.getElementById('status').textContent = `Расписание ${st.schedule_name||'?'} valid=${st.schedule_valid} ${st.schedule_error||''}`;
-  const to = Date.now(), from = to-24*3600e3;
-  const runs = await fetch(`/api/runs?from=${from}&to=${to}&limit=100`).then(r=>r.json());
-  document.getElementById('runs').innerHTML = runs.map(r=>`<tr><td>${new Date(r.scheduled_at).toLocaleString()}</td><td>${r.cmd}</td><td class="${r.status}">${r.status}</td><td>${r.exit_code??''}</td><td>${r.latency_ms}</td><td>${(r.err_tail||'').slice(0,120)}</td></tr>`).join('');
-  const cv = document.getElementById('graph'), ctx = cv.getContext('2d');
-  ctx.clearRect(0,0,cv.width,cv.height);
-  const pts = runs.slice().reverse();
-  const max = Math.max(1,...pts.map(r=>r.latency_ms));
-  ctx.beginPath(); pts.forEach((r,i)=>{const x=i/Math.max(1,pts.length-1)*cv.width, y=cv.height-10-(r.latency_ms/max)*(cv.height-20); i?ctx.lineTo(x,y):ctx.moveTo(x,y);}); ctx.stroke();
-  const nx = await fetch('/api/next?n=20').then(r=>r.json());
-  document.getElementById('next').innerHTML = (nx.events||[]).map(e=>`<tr><td>${new Date(e.time).toLocaleString()}</td><td>${e.point}.${e.action}</td><td>${e.cmd}</td></tr>`).join('');
-  if(!document.getElementById('sched').value){ const s = await fetch('/api/schedule').then(r=>r.json()); document.getElementById('sched').value = s.content||''; }
+  const box = document.getElementById('auth'), app = document.getElementById('app');
+  const h = document.getElementById('health');
+  if (st.setup_required){ box.innerHTML = `<div class="card"><h2>Первый запуск</h2><div class="row"><input id=l placeholder=логин><input id=p type=password placeholder="пароль ≥8"><input id=c type=password placeholder=повтор><button class="primary" onclick="setup()">Создать</button></div></div>`; app.hidden = true; h.textContent = 'setup'; h.className = 'badge'; return; }
+  if (!st.authenticated){ box.innerHTML = `<div class="card"><h2>Вход</h2><div class="row"><input id=l placeholder=логин><input id=p type=password placeholder=пароль><button class="primary" onclick="login()">Войти</button></div></div>`; app.hidden = true; h.textContent = 'login'; h.className = 'badge'; return; }
+  box.innerHTML = ''; app.hidden = false;
+  h.textContent = st.schedule_valid ? (st.schedule_name || 'ok') : 'ошибка';
+  h.className = 'badge ' + (st.schedule_valid ? 'ok' : 'bad');
+  document.getElementById('schedline').textContent = `${st.schedule_name || '?'} — valid=${st.schedule_valid} ${st.schedule_error || ''}`;
+  document.getElementById('cfg').innerHTML = `расписание: ${st.schedule_path}<br>concurrency: ${st.concurrency}<br>lookahead: ${st.lookahead_secs}s<br>retention: ${st.retention_days} дн.`;
+  document.getElementById('who').textContent = 'вошли как ' + (st.login || '?');
+  if (cur === 'events'){ loadRuns(); loadNext(); }
 }
-async function setup(){ const l=document.getElementById('l').value,p=document.getElementById('p').value,c=document.getElementById('c').value;
-  const r=await fetch('/api/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login:l,password:p,confirm:c})});
-  if(!r.ok){alert(await r.text());} refresh(); }
-async function login(){ const l=document.getElementById('l').value,p=document.getElementById('p').value;
-  const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login:l,password:p})});
-  if(!r.ok){alert(await r.text());} refresh(); }
-async function doLogout(){ await fetch('/api/logout',{method:'POST'}); refresh(); }
-async function doValidate(){ const content=document.getElementById('sched').value;
-  const r=await fetch('/api/validate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})}).then(r=>r.json());
-  document.getElementById('diag').textContent = r.ok?'OK':`${r.code}: ${r.message}`; }
-async function doSave(){ const content=document.getElementById('sched').value;
-  const r=await fetch('/api/schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
-  document.getElementById('diag').textContent = r.ok?'Saved':await r.text(); refresh(); }
-async function doReload(){ await fetch('/api/reload',{method:'POST'}); refresh(); }
-refresh(); setInterval(refresh, 10000);
+async function setup(){ const l=v('l'),p=v('p'),c=v('c');
+  const r = await j('POST','/api/setup',{login:l,password:p,confirm:c});
+  if (!r.ok) alert(await r.text()); refresh(); }
+async function login(){ const r = await j('POST','/api/login',{login:v('l'),password:v('p')});
+  if (!r.ok) alert(await r.text()); refresh(); }
+const v = id => document.getElementById(id).value;
+async function loadRuns(){
+  const to = Date.now(), from = to - 24*3600e3, f = document.getElementById('flt').value;
+  let runs = await fetch(`/api/runs?from=${from}&to=${to}&limit=200`).then(r=>r.json());
+  if (f) runs = runs.filter(r=>r.status === f);
+  document.getElementById('runs').innerHTML = runs.map(r=>`<tr><td>${new Date(r.scheduled_at).toLocaleString()}</td><td>${esc(r.cmd)} ${(JSON.parse(r.args||'[]')).join(' ')}</td><td class="${r.status}">${r.status}</td><td>${r.exit_code ?? ''}</td><td>${r.latency_ms}</td><td class="muted">${esc((r.err_tail||'').slice(0,100))}</td></tr>`).join('');
+  const cv = document.getElementById('graph'), ctx = cv.getContext('2d');
+  const dark = document.documentElement.dataset.theme === 'dark';
+  ctx.clearRect(0,0,cv.width,cv.height);
+  const pts = runs.slice().reverse(), max = Math.max(1,...pts.map(r=>r.latency_ms));
+  ctx.strokeStyle = dark ? '#6b9bff' : '#2f6fed'; ctx.beginPath();
+  pts.forEach((r,i)=>{ const x = pts.length < 2 ? 0 : i/(pts.length-1)*cv.width, y = cv.height-8-(r.latency_ms/max)*(cv.height-16); i ? ctx.lineTo(x,y) : ctx.moveTo(x,y); });
+  ctx.stroke();
+}
+async function loadNext(){
+  const nx = await fetch('/api/next?n=20').then(r=>r.json());
+  document.getElementById('next').innerHTML = (nx.events||[]).map(e=>`<tr><td>${new Date(e.time).toLocaleString()}</td><td>${e.point}.${e.action}</td><td>${esc(e.cmd)}</td></tr>`).join('');
+}
+async function loadSched(){
+  const ta = document.getElementById('sched');
+  if (ta.dataset.loaded) return;
+  ta.value = (await fetch('/api/schedule').then(r=>r.json())).content || '';
+  sched0 = ta.value; ta.dataset.loaded = '1';
+  ta.oninput = () => { document.getElementById('dirty').hidden = ta.value === sched0; };
+}
+async function doValidate(){
+  const r = await j('POST','/api/validate',{content:document.getElementById('sched').value}).then(r=>r.json());
+  document.getElementById('diag').textContent = r.ok ? 'OK' : `${r.code}: ${r.message}`;
+}
+async function doSave(){
+  const ta = document.getElementById('sched');
+  const r = await j('POST','/api/schedule',{content:ta.value});
+  document.getElementById('diag').textContent = r.ok ? 'Сохранено' : await r.text();
+  if (r.ok){ sched0 = ta.value; ta.dataset.loaded = '1'; document.getElementById('dirty').hidden = true; }
+  refresh();
+}
+async function doLogout(){ await j('POST','/api/logout'); location.reload(); }
+async function doPasswd(){
+  const r = await j('POST','/api/password',{current:v('pw0'),new:v('pw1'),confirm:v('pw2')});
+  document.getElementById('pwmsg').textContent = r.ok ? 'Пароль сменён, чужие сессии закрыты' : await r.text();
+  if (r.ok){ document.getElementById('pw0').value = document.getElementById('pw1').value = document.getElementById('pw2').value = ''; }
+}
+function esc(s){ return String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+themeInit(); refresh(); setInterval(()=>{ if (cur === 'events' && !document.getElementById('app').hidden) refresh(); }, 10000);
 </script></body></html>

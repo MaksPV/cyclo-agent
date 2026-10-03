@@ -59,10 +59,12 @@ schedule "Agent" {
 
 ## API (всё, кроме `/`, `/healthz` и `/api/setup`, — по сессии)
 
-- `GET /` — дашборд (вшит в бинарь): runs, canvas-график latency,
-  ближайшие, редактор с «Проверить»/«Сохранить» и шпаргалкой
+- `GET /` — дашборд (вшит в бинарь): вкладки События (runs, график latency,
+  ближайшие), Редактор («Проверить»/«Сохранить», шпаргалка), Настройки
+  (конфиг, сессия, смена пароля); светлая/тёмная тема с переключателем
 - `POST /api/setup {login,password,confirm}` — только при пустых users
 - `POST /api/login`, `POST /api/logout` (брутфорс: 5 попыток/мин с IP → 429)
+- `POST /api/password {current,new,confirm}` — смена пароля, чужие сессии закрываются
 - `GET /api/status` (анониму — только setup_required/authenticated), `GET /healthz`
 - `GET /api/runs?from&to&limit` (limit ≤ 1000), `GET /api/next?n≤500&within_secs≤30д`
 - `GET /api/schedule`, `POST /api/schedule {content}` (валидация перед записью, ≤1МБ)
