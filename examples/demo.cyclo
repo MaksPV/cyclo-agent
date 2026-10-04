@@ -4,7 +4,7 @@ schedule "Complex" {
   }
 
   cycle RUN(job) duration = 1m {
-    0m: JOB.fire() {"cmd": job.cmd, "args": job.args, "timeout_s": job.timeout_s};
+    0m: JOB.fire() {"cmd": job.cmd, "args": job.args, "tags": job.tags, "timeout_s": job.timeout_s};
   }
 
   cycle HOURLY(task) duration = 1h {
@@ -16,11 +16,11 @@ schedule "Complex" {
   }
 
   root_cycle start_time = "2026-01-01T00:00:00", duration = 24h {
-    0h: fill EVERY_5M({"cmd": "/bin/echo", "args": ["metrics"], "timeout_s": 10});
-    0h: fill HOURLY({"cmd": "/bin/echo", "args": ["ping"], "timeout_s": 10});
-    [workday(at)] 8h: repeat 11 HOURLY({"cmd": "/bin/echo", "args": ["cleanup"], "timeout_s": 10});
-    3h: RUN({"cmd": "/bin/echo", "args": ["backup"], "timeout_s": 10});
-    [day_of_week(at) == 1] 9h30m: RUN({"cmd": "/bin/echo", "args": ["report"], "timeout_s": 10});
-    12h: RUN({"cmd": "/bin/false", "args": [], "timeout_s": 10});
+    0h: fill EVERY_5M({"cmd": "/bin/echo", "args": ["metrics"], "tags": ["metrics"], "timeout_s": 10});
+    0h: fill HOURLY({"cmd": "/bin/echo", "args": ["ping"], "tags": ["ping"], "timeout_s": 10});
+    [workday(at)] 8h: repeat 11 HOURLY({"cmd": "/bin/echo", "args": ["cleanup"], "tags": ["cleanup"], "timeout_s": 10});
+    3h: RUN({"cmd": "/bin/echo", "args": ["backup"], "tags": ["backup"], "timeout_s": 10});
+    [day_of_week(at) == 1] 9h30m: RUN({"cmd": "/bin/echo", "args": ["report"], "tags": ["report"], "timeout_s": 10});
+    12h: RUN({"cmd": "/bin/false", "args": [], "tags": ["demo-fail"], "timeout_s": 10});
   }
 }

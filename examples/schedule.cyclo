@@ -4,11 +4,16 @@ schedule "Agent" {
   }
 
   cycle RUN(job) duration = 1m {
-    0m: JOB.fire() {"cmd": job.cmd, "args": job.args, "timeout_s": job.timeout_s};
+    0m: JOB.fire() {"cmd": job.cmd, "args": job.args, "tags": job.tags, "timeout_s": job.timeout_s};
+  }
+
+  cycle HOURLY(task) duration = 1h {
+    0m: RUN(task);
   }
 
   root_cycle start_time = "2026-01-01T00:00:00", duration = 24h {
-    0h: repeat 24 RUN({"cmd": "/opt/jobs/ping.sh", "args": [], "timeout_s": 60});
-    3h: RUN({"cmd": "/usr/local/bin/backup.sh", "args": ["--incremental"], "timeout_s": 1800});
+    0h: fill RUN({"cmd": "/bin/echo", "args": ["metrics"], "tags": ["metrics"], "timeout_s": 10});
+    0h: fill HOURLY({"cmd": "/bin/echo", "args": ["ping"], "tags": ["ping"], "timeout_s": 10});
+    3h: RUN({"cmd": "/bin/echo", "args": ["backup"], "tags": ["backup"], "timeout_s": 10});
   }
 }

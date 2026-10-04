@@ -61,6 +61,7 @@ pub fn router(app: App) -> axum::Router {
         .route("/api/validate", axum::routing::post(validate))
         .route("/api/password", axum::routing::post(password))
         .route("/api/series", axum::routing::get(series))
+        .route("/api/meta", axum::routing::get(meta))
         .route(
             "/api/dashboards",
             axum::routing::get(get_dashboards).post(save_dashboards),
@@ -325,6 +326,55 @@ fn metric_value(run: &crate::store::Run, metric: &str) -> Option<f64> {
 
 fn tags_of(run: &crate::store::Run) -> Vec<String> {
     serde_json::from_str(&run.tags).unwrap_or_default()
+}
+
+/// Что реально есть в БД: для выпадающих списков конструктора.
+/// Сканируем свежие запуски (первые 20k): теги, виды, джобы, числовые метрики.
+async fn meta(State(app): State<App>, cookies: Cookies) -> impl IntoResponse {
+    if authed(&cookies, &app).is_none() {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let now = now_ms();
+    let mut tags: std::collections::BTreeSet<String> = Default::default();
+    let mut kinds: std::collections::BTreeSet<String> = Default::default();
+    let mut jobs: std::collections::BTreeSet<String> = Default::default();
+    let mut metrics: std::collections::BTreeSet<String> = Default::default();
+    // Свежие first: series_points отдаёт DESC, берём первые 20k.
+    for r in app
+        .store
+        .series_points(now - 30 * 86_400_000, now)
+        .into_iter()
+        .take(20_000)
+    {
+        kinds.insert(r.kind.clone());
+        if jobs.len() < 1000 {
+            jobs.insert(r.cmd.clone());
+        }
+        for t in tags_of(&r) {
+            tags.insert(t);
+        }
+        metrics.insert("latency_ms".to_owned());
+        metrics.insert("up".to_owned());
+        if r.exit_code.is_some() {
+            metrics.insert("exit_code".to_owned());
+        }
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&r.result) {
+            if let Some(m) = v.as_object() {
+                for (k, x) in m {
+                    if matches!(x, serde_json::Value::Number(_) | serde_json::Value::Bool(_)) {
+                        metrics.insert(format!("result.{k}"));
+                    }
+                }
+            }
+        }
+    }
+    Json(serde_json::json!({
+        "tags": tags.into_iter().collect::<Vec<_>>(),
+        "kinds": kinds.into_iter().collect::<Vec<_>>(),
+        "jobs": jobs.into_iter().take(1000).collect::<Vec<_>>(),
+        "metrics": metrics.into_iter().collect::<Vec<_>>(),
+    }))
+    .into_response()
 }
 
 fn agg_value(agg: &str, mut xs: Vec<f64>) -> Option<f64> {

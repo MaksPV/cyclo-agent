@@ -1,0 +1,25 @@
+// Шаблон http/tcp-проверок для сисадмина: скопируй строки в своё расписание.
+// Тестовые серверы для проверки локально:
+//   python3 -c "from http.server import BaseHTTPRequestHandler, HTTPServer;
+//     HTTPServer(('127.0.0.1', 18099), BaseHTTPRequestHandler).serve_forever()"
+//   python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1', 18098));
+//     s.listen(5)
+//     while True: s.accept()[0].close()"
+schedule "Checks" {
+  point JOB {
+    actions = [fire];
+  }
+
+  cycle HTTPCHECK(task) duration = 1m {
+    0m: JOB.fire() {"check": "http", "url": task.url, "expect": task.expect, "contains": task.contains, "tags": task.tags, "timeout_s": task.timeout_s};
+  }
+
+  cycle TCPCHECK(task) duration = 1m {
+    0m: JOB.fire() {"check": "tcp", "host": task.host, "port": task.port, "tags": task.tags, "timeout_s": task.timeout_s};
+  }
+
+  root_cycle start_time = "2026-01-01T00:00:00", duration = 24h {
+    0h: fill HTTPCHECK({"url": "http://127.0.0.1:18099/health", "expect": 200, "contains": "", "tags": ["web", "prod"], "timeout_s": 10});
+    0h: fill TCPCHECK({"host": "127.0.0.1", "port": 18098, "tags": ["db", "prod"], "timeout_s": 10});
+  }
+}
