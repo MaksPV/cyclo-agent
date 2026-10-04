@@ -197,7 +197,7 @@ async function doPasswd(){
   if (r.ok){ document.getElementById('pw0').value = document.getElementById('pw1').value = document.getElementById('pw2').value = ''; }
 }
 function esc(s){ return String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-let dashdef = null;
+let dashdef = null, dashmeta = {tags:[], kinds:[], jobs:[], metrics:['latency_ms','up']};
 async function loadDash(){
   dashdef = await fetch('/api/dashboards').then(r=>r.json());
   try { dashmeta = await fetch('/api/meta').then(r=>r.json()); } catch(e){}
@@ -230,7 +230,6 @@ function drawChart(cv, pts, type){
   pts.forEach((p,i)=>{ if (p.v === null || p.v === undefined){ pen = false; return; } const x = X(i), y = Y(p.v); pen ? ctx.lineTo(x,y) : ctx.moveTo(x,y); pen = true; });
   ctx.stroke();
 }
-let dashdef = null, dashmeta = {tags:[], kinds:[], jobs:[], metrics:['latency_ms','up']};
 function dashMark(){ document.getElementById('dashdirty').hidden = false; document.getElementById('t-dash').textContent = 'Дашборд •'; }
 function dashClean(){ document.getElementById('dashdirty').hidden = true; document.getElementById('t-dash').textContent = 'Дашборд'; }
 function sel(opts, val, extra){ return `<select ${extra||''}>` + opts.map(o=>`<option ${o===val?'selected':''}>${esc(o)}</option>`).join('') + `</select>`; }
