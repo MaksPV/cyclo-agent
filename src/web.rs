@@ -313,6 +313,8 @@ struct SeriesQuery {
     from: Option<i64>,
     to: Option<i64>,
     bucket_secs: Option<i64>,
+    /// Способ: raw — точки запусков, bucket — усреднение по шагу (дефолт).
+    mode: Option<String>,
 }
 
 /// Число по пути метрики: встроенные (latency_ms, up, exit_code) и любой
@@ -704,17 +706,14 @@ async fn series(
     }
     let metric = q.metric.unwrap_or_else(|| "latency_ms".to_owned());
     let agg = q.agg.unwrap_or_else(|| "avg".to_owned());
-    // Шаг: явный bucket_secs, иначе авто (окно/200). Бакетов не больше 2000.
-    let mut bucket_ms = q.bucket_secs.unwrap_or(0).max(0) * 1000;
-    if bucket_ms <= 0 {
-        bucket_ms = ((to - from) / 200).max(1000);
+    // Способ: raw — каждый запуск своей точкой в точное время, bucket — усреднение
+    // по шагу. Без параметра — bucket (старое поведение, ничего не ломается).
+    let mode = q.mode.unwrap_or_else(|| "bucket".to_owned());
+    if mode != "raw" && mode != "bucket" {
+        return (StatusCode::BAD_REQUEST, "bad mode (raw|bucket)".to_owned()).into_response();
     }
-    // Бакетов не больше 2000 — иначе укрупняем.
-    let n = ((to - from) / bucket_ms) as usize + 1;
-    if n > 2000 {
-        bucket_ms = (to - from) / 2000 + 1;
-    }
-    let mut buckets: Vec<Vec<f64>> = vec![Vec::new(); ((to - from) / bucket_ms) as usize + 1];
+    // Фильтр общий для обоих способов.
+    let mut runs: Vec<(i64, f64)> = vec![];
     for r in app.store.series_points(from, to) {
         if let Some(tag) = &q.tag {
             if !tags_of(&r).iter().any(|t| t == tag) {
@@ -732,10 +731,48 @@ async fn series(
             }
         }
         if let Some(v) = metric_value(&r, &metric) {
-            let i = ((r.scheduled_at - from) / bucket_ms) as usize;
-            if let Some(b) = buckets.get_mut(i) {
-                b.push(v);
-            }
+            runs.push((r.scheduled_at, v));
+        }
+    }
+    if mode == "raw" {
+        // Честные точки: больше 5000 на экран не влезет — просим включить «по шагу».
+        if runs.len() > 5000 {
+            return (
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "too many points ({} > 5000): включи «по шагу» или уменьши окно",
+                    runs.len()
+                ),
+            )
+                .into_response();
+        }
+        runs.sort_by_key(|(t, _)| *t);
+        let points: Vec<serde_json::Value> = runs
+            .iter()
+            .map(|(t, v)| serde_json::json!({"t": t, "v": v}))
+            .collect();
+        let count = points.len();
+        return Json(serde_json::json!({
+            "metric": metric, "mode": "raw", "count": count, "points": points,
+        }))
+        .into_response();
+    }
+    // Шаг: явный bucket_secs, иначе авто (окно/200). Бакетов не больше 2000 —
+    // иначе укрупняем (фактический шаг виден в ответе и в подписи графика).
+    let mut bucket_ms = q.bucket_secs.unwrap_or(0).max(0) * 1000;
+    if bucket_ms <= 0 {
+        bucket_ms = ((to - from) / 200).max(1000);
+    }
+    // Бакетов не больше 2000 — иначе укрупняем.
+    let n = ((to - from) / bucket_ms) as usize + 1;
+    if n > 2000 {
+        bucket_ms = (to - from) / 2000 + 1;
+    }
+    let mut buckets: Vec<Vec<f64>> = vec![Vec::new(); ((to - from) / bucket_ms) as usize + 1];
+    for (t, v) in runs {
+        let i = ((t - from) / bucket_ms) as usize;
+        if let Some(b) = buckets.get_mut(i) {
+            b.push(v);
         }
     }
     let points: Vec<serde_json::Value> = buckets
@@ -746,7 +783,7 @@ async fn series(
         })
         .collect();
     Json(serde_json::json!({
-        "metric": metric, "agg": agg,
+        "metric": metric, "agg": agg, "mode": "bucket",
         "bucket_secs": bucket_ms / 1000, "points": points,
     }))
     .into_response()
@@ -757,9 +794,9 @@ fn default_dashboards() -> serde_json::Value {
         "version": 1,
         "charts": [
             {"title": "latency (все)", "metric": "latency_ms", "agg": "p50",
-             "type": "line", "window_secs": 86400, "bucket_secs": 300},
+             "type": "line", "window_secs": 86400, "bucket_secs": 300, "mode": "raw"},
             {"title": "up (все)", "metric": "up", "agg": "avg",
-             "type": "dots", "window_secs": 86400, "bucket_secs": 300},
+             "type": "dots", "window_secs": 86400, "bucket_secs": 300, "mode": "raw"},
         ],
     })
 }
@@ -801,8 +838,13 @@ fn check_dashboards(v: &serde_json::Value) -> Result<(), String> {
         if !(1..=30 * 86_400).contains(&window) {
             return Err("window_secs 1..2592000".to_owned());
         }
-        // bucket_secs опционален (файлы эпохи без шага — ок): нет — дефолт 300.
+        // mode опционален (старые файлы без него — bucket, ничего не ломается).
+        match c.get("mode").and_then(|x| x.as_str()).unwrap_or("bucket") {
+            "raw" | "bucket" => {}
+            other => return Err(format!("bad mode '{other}'")),
+        }
         let bucket = c.get("bucket_secs").and_then(|x| x.as_i64()).unwrap_or(300);
+        // bucket_secs опционален (нет — дефолт 300); при способе «запуски» не используется.
         if !(1..=86_400).contains(&bucket) {
             return Err("bucket_secs 1..86400".to_owned());
         }

@@ -106,13 +106,17 @@ cycle TCPCHECK(task) duration = 1m {
   `GET /api/files?path=` → `{path, content}`, `POST /api/files {path, content}`
   (≤1МБ, только `.cyclo` без `..`), `DELETE /api/files?path=` (главный нельзя).
   Проверка — всегда по главному файлу (use резолвится с диска).
-- `GET /api/series?tag&job&kind&metric&agg&from&to&bucket_secs` — точки `{t, v|null}`
-  (шаг: явный или авто окно/200, бакетов ≤2000); метрика — `latency_ms`,
+- `GET /api/series?tag&job&kind&metric&agg&from&to&bucket_secs&mode` — точки `{t, v|null}`.
+  Способ `mode=bucket` (дефолт): окно режется на кусочки по шагу
+  (явный `bucket_secs` или авто окно/200, бакетов ≤2000 — иначе шаг укрупняется,
+  фактический виден в ответе), в каждом агрегация; метрика — `latency_ms`,
   `up` (1/0 из статуса), `exit_code` или числовой путь в `result`
   (`result.status_code`, ...); агрегация `avg|min|max|p50|p99|count`,
-  окно ≤90д
+  окно ≤90д. Способ `mode=raw`: каждый запуск своей точкой в точное время
+  (агрегации нет); точек больше 5000 — 400 с просьбой включить «по шагу».
 - `GET /api/dashboards` — дефолт, если файла нет; `POST /api/dashboards {content}`
-  (≤256КБ, `{version:1, charts:[{title,metric,agg,type:line|dots|bars,window_secs,bucket_secs?,tag?|job?|kind?}]}`)
+  (≤256КБ, `{version:1, charts:[{title,metric,agg,type:line|dots|bars,window_secs,bucket_secs?,mode?:raw|bucket,tag?|job?|kind?}]}`;
+  без `mode` — `bucket`, старые файлы читаются как раньше)
 
 Сессии: HttpOnly + SameSite=Lax, TTL 12ч.
 
