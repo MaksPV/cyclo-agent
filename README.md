@@ -1,173 +1,187 @@
 # cyclo-agent
 
-Демон + веб-морда для расписаний на языке Cyclorithm. Раз в N минут
-исполняет команды из `.cyclo`-файла (пинг, скрипты, бэкап), пишет историю
-в SQLite, отдаёт дашборд с графиками и редактор расписания. Один бинарь,
-без докера.
+Демон и панель управления для расписаний на языке Cyclorithm. Исполняет
+команды по расписанию — проверки доступности, резервное копирование,
+произвольные скрипты. Ведёт историю запусков в SQLite. Предоставляет
+веб-интерфейс с графиками, редактором расписания и настройками.
 
-Ядро языка — сабмодуль
-[`third-party/cyclorithm`](https://github.com/MaksPV/cyclorithm/tree/dev)
-(ветка `dev`): в репозитории лежит только ссылка, код подтягивается
-при клонировании. Дизайн морды зафиксирован в [DESIGN.md](DESIGN.md).
+Поставляется одним исполняемым файлом. Панель управления встроена в него
+на этапе сборки: отдельного фронтенда, сборщика и зависимостей нет.
+Рассчитан на постоянную работу на серверах, роутерах и одноплатных
+компьютерах: в режиме ожидания потребляет около 12 МБ памяти и практически
+не использует процессор. Сборки — статические, под x86_64, aarch64, armv7,
+mipsel, mips и Android/Termux.
 
-## Быстрый старт
+Исходный код: https://github.com/MaksPV/cyclo-agent
 
-Требуется Rust 1.85+.
+Синтаксис расписаний обеспечивается библиотекой
+[cyclorithm](https://github.com/MaksPV/cyclorithm/tree/dev) (ветка `dev`),
+подключённой как git-сабмодуль.
+
+## Установка
+
+Требуется Rust 1.85 или новее.
 
 ```sh
-git clone --recurse-submodules <url> cyclo-agent  # без флага — git submodule update --init
+git clone --recurse-submodules https://github.com/MaksPV/cyclo-agent
+cd cyclo-agent
 cargo build --release
-# Только демон (без порта):
-./target/release/cyclo-agent run --schedule ./examples/schedule.cyclo --db ./agent.db
-# Демон + веб-морда:
-./target/release/cyclo-agent run --schedule ./examples/schedule.cyclo \
-  --db ./agent.db --web 127.0.0.1:8080
 ```
 
-Открыть http://127.0.0.1:8080 — при первом запуске страница `/setup`
-попросит придумать логин/пароль (хранится argon2-хэшем в БД).
+Если репозиторий уже склонирован без сабмодулей:
 
-Конфиг `agent.toml` (флаг `--config`, иначе `./agent.toml`,
-иначе `/etc/cyclo-agent/agent.toml`) — см. `agent.toml.example`:
+```sh
+git submodule update --init
+```
+
+## Запуск
+
+Демон без веб-интерфейса:
+
+```sh
+./target/release/cyclo-agent run \
+    --schedule ./examples/schedule.cyclo \
+    --db ./agent.db
+```
+
+Демон с веб-интерфейсом:
+
+```sh
+./target/release/cyclo-agent run \
+    --schedule ./examples/schedule.cyclo \
+    --db ./agent.db \
+    --web 127.0.0.1:8080
+```
+
+При первом открытии http://127.0.0.1:8080 будет предложено задать логин
+и пароль. Пароль хранится в базе в виде argon2-хэша.
+
+## Настройка
+
+Файл `agent.toml` ищется по пути из `--config`, затем в текущем каталоге,
+затем в `/etc/cyclo-agent/agent.toml`. Образец — `agent.toml.example`.
 
 ```toml
-schedule = "/etc/cyclo-agent/schedule.cyclo"  # путь до исполняемого файла
-db = "/var/lib/cyclo-agent/agent.db"
-# web = "127.0.0.1:8080"  # без ключа — демон без веба
-poll_secs = 10        # сейчас не используется (сон до события)
-lookahead_secs = 60   # окно /api/next по умолчанию
-concurrency = 4
-retention_days = 90
-retention_max_rows = 1000000
+schedule = "/etc/cyclo-agent/schedule.cyclo"
+db       = "/var/lib/cyclo-agent/agent.db"
+# web    = "127.0.0.1:8080"   # без параметра веб-интерфейс не поднимается
+
+lookahead_secs     = 60      # окно /api/next по умолчанию
+concurrency        = 4
+retention_days     = 90
+retention_max_rows = 1_000_000
 ```
 
-`schedule` — путь до файла (исполняемый + база для `use`); раскладывается
-на `directory` + `schedule_file` (имя `.cyclo` без путей). Хранение режется
-и по дням, и по числу строк. Настройки правятся и из морды
-(`GET/POST /api/config`; директория, файл, параллельность — после рестарта
-демона, лимиты хранения — без).
+История ограничивается одновременно по сроку хранения и по числу записей —
+срабатывает то, что наступит раньше.
 
-## Формат задач
+Параметры можно изменять и через панель управления. Директория расписания,
+имя файла и параллельность применяются после перезапуска демона; ограничения
+хранения — немедленно.
 
-Агент исполняет только события с `action_attrs.cmd`:
+## Расписание
+
+Исполняются только те события, у которых в `action_attrs` присутствует
+`cmd` или `check`. Остальные игнорируются.
 
 ```cyclo
 schedule "Agent" {
   point JOB { actions = [fire]; }
+
   cycle RUN(job) duration = 1m {
     0m: JOB.fire() {"cmd": job.cmd, "args": job.args, "timeout_s": job.timeout_s};
   }
+
   root_cycle start_time = "2026-01-01T00:00:00", duration = 24h {
     0h: fill RUN({"cmd": "/opt/jobs/ping.sh", "args": [], "timeout_s": 60});
-    3h: RUN({"cmd": "/usr/local/bin/backup.sh", "args": ["--incremental"], "timeout_s": 1800});
+    3h:      RUN({"cmd": "/usr/local/bin/backup.sh", "args": ["--incremental"], "timeout_s": 1800});
   }
 }
 ```
 
-Планировщик спит до ближайшего события (точность 0 мс по `started_at`),
-исполняет due-пачкой (до 50 000 одновременных), дедуп — через `UNIQUE(job_key)`
-плюс проверка перед спавном. Опоздание >60с пишется как `skipped` и не
-исполняется. Hot reload: правка файла (вотчер 5с), SIGHUP; битый файл —
-старый план продолжает работать, ошибка видна в `/api/status`.
+Планировщик переходит в сон до ближайшего события. Точность срабатывания —
+0 мс по времени начала. События, наступившие одновременно, исполняются
+пакетом. Повторные запуски отсекаются на уровне базы данных и дополнительной
+проверкой перед запуском процесса. Опоздание больше 60 секунд фиксируется
+как `skipped` и не исполняется.
 
-## Виды задач
+Изменения в файле расписания подхватываются автоматически (проверка раз
+в 5 секунд) либо по сигналу `SIGHUP`. При синтаксической ошибке продолжает
+работать предыдущая версия расписания, а сведения об ошибке отображаются
+в панели.
 
-Исполняется только событие с `cmd` или `check` в `action_attrs`:
+### Виды проверок
+
+Помимо запуска внешних команд (`cmd`), поддерживаются проверки HTTP и TCP.
 
 ```cyclo
-cycle EXEC(task) duration = 1m {
-  0m: JOB.fire() {"cmd": task.cmd, "args": task.args, "tags": task.tags, "timeout_s": task.timeout_s};
-}
 cycle HTTPCHECK(task) duration = 1m {
-  0m: JOB.fire() {"check": "http", "url": task.url, "expect": task.expect, "contains": task.contains, "tags": task.tags, "timeout_s": task.timeout_s};
+  0m: JOB.fire() {"check": "http", "url": task.url, "expect": task.expect,
+                  "contains": task.contains, "tags": task.tags,
+                  "timeout_s": task.timeout_s};
 }
+
 cycle TCPCHECK(task) duration = 1m {
-  0m: JOB.fire() {"check": "tcp", "host": task.host, "port": task.port, "tags": task.tags, "timeout_s": task.timeout_s};
+  0m: JOB.fire() {"check": "tcp", "host": task.host, "port": task.port,
+                  "tags": task.tags, "timeout_s": task.timeout_s};
 }
 ```
 
-- `cmd` — внешняя команда без shell (`args` — массив строк).
-  Циклы лучше разделять по видам: блок вычисляет все поля сразу,
-  отсутствующее поле в мапе — `unknown-field` в момент развёртки.
-- `check: "http"` — GET; `ok`, если код == `expect` (без `expect` — любой
-  2xx) и тело содержит `contains` (без него — не проверяется).
-  В `result`: `status_code`, `bytes`, `matched`; тело — в `out_tail`.
-- `check: "tcp"` — connect; `ok`, если порт открылся за `timeout_s`.
-- `tags` — массив строк (`["web", "prod"]`), хранятся с запуском.
-- Неизвестный `check` — событие игнорируется (опечатка видна отсутствием запусков).
+Для HTTP выполняется GET-запрос. Успехом считается совпадение кода ответа
+с `expect` (по умолчанию — любой код 2xx) и наличие подстроки `contains`
+в теле (по умолчанию не проверяется). В результатах сохраняются код ответа,
+размер тела и признак совпадения.
 
-## API (всё, кроме `/`, `/healthz` и `/api/setup`, — по сессии)
+Для TCP успехом считается установление соединения за отведённое время.
 
-- `GET /` — морда (вшита в бинарь): сайдбар События / Дашборд / Редактор /
-  Настройки. События: статус расписания, график задержки, запуски с пагинацией,
-  ближайшие. Дашборд: графики + конструктор. Редактор: файлы, «Проверить» /
-  «Сохранить», шпаргалка. Настройки: конфиг, сессия, смена пароля.
-  Светлая/тёмная тема с переключателем.
-- `POST /api/setup {login,password,confirm}` — только при пустых users
-- `POST /api/login`, `POST /api/logout` (брутфорс: 5 попыток/мин с IP → 429)
-- `POST /api/password {current,new,confirm}` — смена пароля, чужие сессии закрываются
-- `GET /api/status` (анониму — только setup_required/authenticated), `GET /healthz`
-- `GET /api/runs?from&to&limit&offset&status` (limit ≤ 1000, статус из
-  ok|fail|timeout|skipped, иначе 400) — `{runs, total}` для пагинации,
-  `GET /api/next?n≤500&within_secs≤30д`
-- `GET /api/meta` — живые списки тегов/видов/задач/метрик для конструктора.
-- `GET /api/config`, `POST /api/config` — конфиг демона (директория, файл,
-  лимиты хранения, параллельность, lookahead).
-- `GET /api/schedule`, `POST /api/schedule {content}` (валидация перед записью, ≤1МБ)
-- `POST /api/validate {content}` → `{ok | code,message}` (≤1МБ)
-- `GET /api/files` → `{main, files[]}` (.cyclo рядом с расписанием),
-  `GET /api/files?path=` → `{path, content}`, `POST /api/files {path, content}`
-  (≤1МБ, только `.cyclo` без `..`), `DELETE /api/files?path=` (главный нельзя).
-  Проверка — всегда по главному файлу (use резолвится с диска).
-- `GET /api/series?tag&job&kind&metric&agg&from&to&bucket_secs&mode` — точки `{t, v|null}`.
-  Способ `mode=bucket` (дефолт): окно режется на кусочки по шагу
-  (явный `bucket_secs` или авто окно/200, бакетов ≤2000 — иначе шаг укрупняется,
-  фактический виден в ответе), в каждом агрегация; метрика — `latency_ms`,
-  `up` (1/0 из статуса), `exit_code` или числовой путь в `result`
-  (`result.status_code`, ...); агрегация `avg|min|max|p50|p99|count`,
-  окно ≤90д. Способ `mode=raw`: каждый запуск своей точкой в точное время
-  (агрегации нет); точек больше 5000 — 400 с просьбой включить «по шагу».
-- `GET /api/dashboards` — дефолт, если файла нет; `POST /api/dashboards {content}`
-  (≤256КБ, `{version:1, charts:[{title,metric,agg,type:line|dots|bars,window_secs,bucket_secs?,mode?:raw|bucket,tag?|job?|kind?}]}`;
-  без `mode` — `bucket`, старые файлы читаются как раньше)
+Поле `tags` — массив строк. Метки сохраняются вместе с запуском и позволяют
+строить графики по отдельным группам задач.
 
-Сессии: HttpOnly + SameSite=Lax, TTL 12ч.
+## Панель управления
 
-## От расписания до графика
+Интерфейс состоит из четырёх разделов:
 
-1. Задача с тегом в `.cyclo`: `{"cmd": ..., "tags": ["web"], ...}`
-   или `{"check": "http", ..., "tags": ["web"], ...}`.
-2. Запуски копятся в `runs` (вид, теги, `result` JSON).
-3. Вкладка «Дашборд» → конструктор: списки тегов/видов/джоб/метрик
-   подтягиваются из живых данных (`GET /api/meta`) — вбивать вслепую
-   не надо; новая метрика появится в списке после первых запусков.
-4. Строка таблицы = график (источник, метрика-путь, агрегация, вид,
-   окно, бакет); правки inline, «Сохранить дашборд» пишет `dashboards.json`.
-5. Примеры: `examples/schedule.cyclo` (старт), `examples/demo.cyclo`
-   (плотное с тегами), `examples/checks.cyclo` (шаблон http/tcp).
+- **События** — состояние расписания, график задержек, таблица запусков
+  с постраничной навигацией и список ближайших срабатываний.
+- **Дашборд** — произвольный набор графиков и конструктор для их настройки.
+- **Редактор** — просмотр и правка файлов расписания, проверка синтаксиса.
+- **Настройки** — параметры демона, сведения о текущей сессии, смена пароля.
 
-## Раскладка на сервере
+Поддерживаются светлая и тёмная темы. Графики строятся по фактическим
+данным из истории запусков; при наведении доступны точные значения
+и сведения о событиях.
+
+## Размещение на сервере
 
 ```
 /usr/local/bin/cyclo-agent
-/etc/cyclo-agent/agent.toml, schedule.cyclo   # 640 root:cyclo-agent
-/var/lib/cyclo-agent/agent.db                 # владелец cyclo-agent
+/etc/cyclo-agent/agent.toml
+/etc/cyclo-agent/schedule.cyclo      # права 640 root:cyclo-agent
+/var/lib/cyclo-agent/agent.db        # владелец cyclo-agent
 ```
 
-systemd: `User=cyclo-agent Restart=always`, наружу — через reverse-proxy.
-Сброс доступа: `cyclo-agent reset-auth` (гасит сессии) + удалить строку
-`users` в БД для повторного setup.
+Пример юнита systemd:
+
+```ini
+[Service]
+User=cyclo-agent
+ExecStart=/usr/local/bin/cyclo-agent run --web 127.0.0.1:8080
+Restart=always
+```
+
+Внешний доступ рекомендуется организовывать через обратный прокси.
+
+При утере пароля команда `cyclo-agent reset-auth` завершает все активные
+сессии. Полный сброс учётной записи — удаление строки из таблицы `users`;
+при следующем открытии панели снова будет предложена первичная настройка.
 
 ## Ограничения
 
-- Только exec (без `sh -c`), всё от юзера демона, `timeout_s` убивает зависшее.
-- Простой idle: ~12 МБ RAM, ~0% CPU между событиями (сон до ближайшего).
-
-## Сборки
-
-CI собирает статические musl-бинари: ПК (`x86_64`, `aarch64`), роутеры
-(`armv7`, `aarch64`, `mipsel`, `mips`), телефоны Android/Termux (`aarch64`,
-`armv7`) — артефакты в прогоне workflow.
+- Команды исполняются напрямую, без промежуточной оболочки. Все процессы
+  запускаются от имени пользователя, под которым работает демон.
+- Для каждой команды задаётся предельное время исполнения. По его истечении
+  процесс завершается, запуску присваивается статус `timeout`.
+- Между событиями демон не потребляет заметных ресурсов.
 
 ## Лицензия
 
