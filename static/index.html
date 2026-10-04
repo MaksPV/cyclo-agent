@@ -31,7 +31,15 @@ nav.tabs button.on{color:var(--fg);border-bottom-color:var(--accent);font-weight
 .muted{color:var(--muted);font-size:.85em}
 table{border-collapse:collapse;width:100%}
 td,th{border-bottom:1px solid var(--line);padding:.35em .5em;font-size:13px;text-align:left}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.scroll{max-height:30em;overflow:auto}
+.scroll thead th{position:sticky;top:0;background:var(--card);z-index:1}
+.scroll tbody tr:hover{background:color-mix(in srgb, var(--fg) 6%, transparent)}
 .ok{color:var(--ok)} .fail,.timeout{color:var(--bad)} .skipped{color:var(--skip)}
+.pill{display:inline-block;padding:.1em .6em;border-radius:2em;font-size:.85em;border:1px solid currentColor;white-space:nowrap}
+button:disabled{opacity:.45;cursor:default}
+button:disabled:hover{border-color:var(--line)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 canvas{width:100%;height:170px}
 #sched{width:100%;height:320px;font-family:var(--mono);font-size:13px}
 #diag{white-space:pre-wrap;font-family:var(--mono);font-size:12px;background:var(--bg);border:1px solid var(--line);border-radius:.4em;padding:.6em;margin-top:.6em;min-height:2.5em}
@@ -64,11 +72,11 @@ pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
         <label class="muted">статус <select id="flt" onchange="runPage=0;loadRuns()"><option value="">все</option><option>ok</option><option>fail</option><option>timeout</option><option>skipped</option></select></label>
         <label class="muted">по <select id="rsize" onchange="runPage=0;loadRuns()"><option>50</option><option selected>100</option><option>200</option></select></label>
       </div>
-      <table><thead><tr><th>план</th><th>тип</th><th>cmd</th><th>теги</th><th>статус</th><th>exit</th><th>мс</th><th>stderr</th></tr></thead><tbody id="runs"></tbody></table>
+      <div class="scroll"><table><thead><tr><th>план</th><th>тип</th><th>cmd</th><th>теги</th><th>статус</th><th class="num">exit</th><th class="num">мс</th><th>stderr</th></tr></thead><tbody id="runs"></tbody></table></div>
       <div class="row" style="margin-top:.5em">
-        <button onclick="runNav(-1)">‹ назад</button>
+        <button id="rprev" onclick="runNav(-1)">‹ назад</button>
         <span id="rpage" class="muted"></span>
-        <button onclick="runNav(1)">вперёд ›</button>
+        <button id="rnext" onclick="runNav(1)">вперёд ›</button>
       </div>
     </div>
     <div class="card"><h2>Ближайшие</h2>
@@ -79,8 +87,8 @@ pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
   <section id="v-dash" hidden>
     <div id="charts"></div>
     <div class="card"><h2>Конструктор</h2>
-      <table><thead><tr><th></th><th>название</th><th>источник</th><th>значение</th><th>метрика</th><th>окно, с</th><th>тип</th><th>способ</th><th>агрегация</th><th>шаг, с</th></tr></thead>
-      <tbody id="ctable"></tbody></table>
+      <div class="scroll"><table><thead><tr><th></th><th>название</th><th>источник</th><th>значение</th><th>метрика</th><th>окно, с</th><th>тип</th><th>способ</th><th>агрегация</th><th>шаг, с</th></tr></thead>
+      <tbody id="ctable"></tbody></table></div>
       <div class="row" style="margin-top:.6em">
         <button class="primary" onclick="dashSave()">Сохранить дашборд</button>
         <button onclick="dashReset()">Сбросить</button>
@@ -220,7 +228,9 @@ async function loadRuns(){
   const pages = Math.max(1, Math.ceil(runTotal / size));
   if (runPage > pages - 1){ runPage = pages - 1; return loadRuns(); }
   document.getElementById('rpage').textContent = `стр. ${runPage+1} из ${pages} (всего ${runTotal})`;
-  document.getElementById('runs').innerHTML = runs.map(r=>`<tr><td>${new Date(r.scheduled_at).toLocaleString()}</td><td>${r.kind}</td><td>${esc(r.cmd)}</td><td>${esc((JSON.parse(r.tags||'[]')).join(','))}</td><td class="${r.status}">${r.status}</td><td>${r.exit_code ?? ''}</td><td>${r.latency_ms}</td><td class="muted">${esc((r.err_tail||'').slice(0,100))}</td></tr>`).join('');
+  document.getElementById('rprev').disabled = runPage <= 0;
+  document.getElementById('rnext').disabled = runPage >= pages - 1;
+  document.getElementById('runs').innerHTML = runs.map(r=>`<tr><td>${new Date(r.scheduled_at).toLocaleString()}</td><td>${r.kind}</td><td>${esc(r.cmd)}</td><td>${esc((JSON.parse(r.tags||'[]')).join(','))}</td><td><span class="pill ${r.status}">${r.status}</span></td><td class="num">${r.exit_code ?? ''}</td><td class="num">${r.latency_ms}</td><td class="muted">${esc((r.err_tail||'').slice(0,100))}</td></tr>`).join('');
   drawChart(document.getElementById('graph'), runs.slice().reverse().map(r=>({t: r.scheduled_at, v: r.latency_ms})), 'line', 'latency_ms');
 }
 async function loadNext(){
