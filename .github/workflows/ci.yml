@@ -33,19 +33,15 @@ jobs:
           - target: aarch64-unknown-linux-musl
             name: pc-aarch64-musl
             image: ghcr.io/cross-rs/aarch64-unknown-linux-musl:main
-          # Роутеры (OpenWrt): arm/arm64/mips
+          # Роутеры (OpenWrt): arm/arm64.
+          # mips/mipsel выкинуты: rustup больше не отдаёт для них rust-std,
+          # а build-std не завёлся (криптобэкенд без mips32).
           - target: armv7-unknown-linux-musleabihf
             name: router-armv7-musl
             image: ghcr.io/cross-rs/armv7-unknown-linux-musleabihf:main
           - target: aarch64-unknown-linux-musl
             name: router-aarch64-musl
             image: ghcr.io/cross-rs/aarch64-unknown-linux-musl:main
-          - target: mipsel-unknown-linux-musl
-            name: router-mipsel-musl
-            image: ghcr.io/cross-rs/mipsel-unknown-linux-musl:main
-          - target: mips-unknown-linux-musl
-            name: router-mips-musl
-            image: ghcr.io/cross-rs/mips-unknown-linux-musl:main
           # Телефоны (Android/Termux): arm64 + старый 32-битный arm
           - target: aarch64-linux-android
             name: phone-aarch64-android
