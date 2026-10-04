@@ -73,7 +73,7 @@ pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
   <section id="v-dash" hidden>
     <div id="charts"></div>
     <div class="card"><h2>Конструктор</h2>
-      <table><thead><tr><th></th><th>название</th><th>источник</th><th>значение</th><th>метрика</th><th>агрегация</th><th>тип</th><th>окно, с</th></tr></thead>
+      <table><thead><tr><th></th><th>название</th><th>источник</th><th>значение</th><th>метрика</th><th>агрегация</th><th>тип</th><th>окно, с</th><th>шаг, с</th></tr></thead>
       <tbody id="ctable"></tbody></table>
       <div class="row" style="margin-top:.6em">
         <button class="primary" onclick="dashSave()">Сохранить дашборд</button>
@@ -310,7 +310,7 @@ async function loadDash(){
     box.appendChild(card);
     const sub = card.querySelector('.chartsub');
     try {
-      const q = new URLSearchParams({metric:c.metric, agg:c.agg||'avg', to, from: to - (c.window_secs||86400)*1000});
+      const q = new URLSearchParams({metric:c.metric, agg:c.agg||'avg', to, from: to - (c.window_secs||86400)*1000, bucket_secs: c.bucket_secs||300});
       if (c.tag) q.set('tag', c.tag); if (c.job) q.set('job', c.job); if (c.kind) q.set('kind', c.kind);
       const r = await fetch('/api/series?'+q);
       if (!r.ok) throw 0;
@@ -369,7 +369,8 @@ function renderDashTable(){
       <td>${sel(dashmeta.metrics, c.metric, 'class="f-metric"')}</td>
       <td>${sel(['avg','min','max','p50','p99','count'], c.agg||'avg', 'class="f-agg"')}</td>
       <td>${sel(['line','dots','bars'], c.type||'line', 'class="f-type"')}</td>
-      <td><input class="f-win" type="number" value="${c.window_secs||86400}" style="width:6em"></td></tr>`;
+      <td><input class="f-win" type="number" value="${c.window_secs||86400}" style="width:6em"></td>
+      <td><input class="f-bucket" type="number" value="${c.bucket_secs||300}" style="width:5em"></td></tr>`;
   }).join('');
   tb.innerHTML = rows + `<tr id="ghost"><td><button onclick="chartAdd()" title="добавить">+</button></td><td colspan="8" class="muted">новая строка — кнопка + слева</td></tr>`;
   tb.onchange = readDashTable;
@@ -379,7 +380,7 @@ function readDashTable(){
   const tb = document.getElementById('ctable');
   dashdef.charts = [...tb.querySelectorAll('tr[data-i]')].map(tr=>{
     const g = cl => tr.querySelector(cl).value, gi = cl => +tr.querySelector(cl).value || 0;
-    const c = {title: g('.f-title'), metric: g('.f-metric'), agg: g('.f-agg'), type: g('.f-type'), window_secs: gi('.f-win') || 86400};
+    const c = {title: g('.f-title'), metric: g('.f-metric'), agg: g('.f-agg'), type: g('.f-type'), window_secs: gi('.f-win') || 86400, bucket_secs: gi('.f-bucket') || 300};
     const src = g('.f-src'), v = g('.f-srcv');
     if ((src === 'tag' || src === 'job' || src === 'kind') && v) c[src] = v;
     return c;
@@ -402,7 +403,7 @@ function chartDel(i){ readDashTableSilent(); dashdef.charts.splice(i,1); renderD
 function readDashTableSilent(){ try { const tb = document.getElementById('ctable'); tb.onchange = null; tb.oninput = null; readDashTable(); tb.onchange = readDashTable; tb.oninput = readDashTable; } catch(e){} }
 function chartAdd(){
   readDashTableSilent();
-  dashdef.charts.push({title:'новый', metric: dashmeta.metrics[0] || 'latency_ms', agg:'avg', type:'line', window_secs:86400});
+  dashdef.charts.push({title:'новый', metric: dashmeta.metrics[0] || 'latency_ms', agg:'avg', type:'line', window_secs:86400, bucket_secs:300});
   renderDashTable(); dashMark();
 }
 async function dashReset(){ await loadDash(); dashClean(); document.getElementById('dashmsg').textContent = ''; }

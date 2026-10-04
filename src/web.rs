@@ -312,6 +312,7 @@ struct SeriesQuery {
     agg: Option<String>,
     from: Option<i64>,
     to: Option<i64>,
+    bucket_secs: Option<i64>,
 }
 
 /// Число по пути метрики: встроенные (latency_ms, up, exit_code) и любой
@@ -703,8 +704,11 @@ async fn series(
     }
     let metric = q.metric.unwrap_or_else(|| "latency_ms".to_owned());
     let agg = q.agg.unwrap_or_else(|| "avg".to_owned());
-    // Шаг всегда авто: окно/200, бакетов не больше 2000.
-    let mut bucket_ms = ((to - from) / 200).max(1000);
+    // Шаг: явный bucket_secs, иначе авто (окно/200). Бакетов не больше 2000.
+    let mut bucket_ms = q.bucket_secs.unwrap_or(0).max(0) * 1000;
+    if bucket_ms <= 0 {
+        bucket_ms = ((to - from) / 200).max(1000);
+    }
     // Бакетов не больше 2000 — иначе укрупняем.
     let n = ((to - from) / bucket_ms) as usize + 1;
     if n > 2000 {
@@ -742,7 +746,8 @@ async fn series(
         })
         .collect();
     Json(serde_json::json!({
-        "metric": metric, "agg": agg, "points": points,
+        "metric": metric, "agg": agg,
+        "bucket_secs": bucket_ms / 1000, "points": points,
     }))
     .into_response()
 }
@@ -752,9 +757,9 @@ fn default_dashboards() -> serde_json::Value {
         "version": 1,
         "charts": [
             {"title": "latency (все)", "metric": "latency_ms", "agg": "p50",
-             "type": "line", "window_secs": 86400},
+             "type": "line", "window_secs": 86400, "bucket_secs": 300},
             {"title": "up (все)", "metric": "up", "agg": "avg",
-             "type": "dots", "window_secs": 86400},
+             "type": "dots", "window_secs": 86400, "bucket_secs": 300},
         ],
     })
 }
@@ -796,7 +801,11 @@ fn check_dashboards(v: &serde_json::Value) -> Result<(), String> {
         if !(1..=30 * 86_400).contains(&window) {
             return Err("window_secs 1..2592000".to_owned());
         }
-        // bucket_secs больше нет: шаг всегда авто (старые файлы с полем — ок, игнорируем).
+        // bucket_secs опционален (файлы эпохи без шага — ок): нет — дефолт 300.
+        let bucket = c.get("bucket_secs").and_then(|x| x.as_i64()).unwrap_or(300);
+        if !(1..=86_400).contains(&bucket) {
+            return Err("bucket_secs 1..86400".to_owned());
+        }
     }
     Ok(())
 }
