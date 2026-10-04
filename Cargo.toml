@@ -10,7 +10,7 @@ name = "cyclo-agent"
 path = "src/main.rs"
 
 [dependencies]
-cyclorithm-core = { path = "../cycloritm/crates/cyclorithm-core" }
+cyclorithm-core = { path = "third-party/cyclorithm/crates/cyclorithm-core" }
 axum = { version = "0.8", features = ["json"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signal", "process", "fs"] }
 tower = "0.5"

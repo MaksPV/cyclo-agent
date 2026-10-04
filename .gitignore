@@ -1,1 +1,6 @@
 /target
+*.db
+*.db-journal
+agent.toml
+dashboards.json
+nohup.out

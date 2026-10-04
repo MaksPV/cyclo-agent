@@ -1,0 +1,4 @@
+[submodule "third-party/cyclorithm"]
+	path = third-party/cyclorithm
+	url = https://github.com/MaksPV/cyclorithm.git
+	branch = dev

@@ -5,11 +5,17 @@
 в SQLite, отдаёт дашборд с графиками и редактор расписания. Один бинарь,
 без докера.
 
-Ядро языка берётся из `../cycloritm/crates/cyclorithm-core` (path-зависимость).
+Ядро языка — сабмодуль
+[`third-party/cyclorithm`](https://github.com/MaksPV/cyclorithm/tree/dev)
+(ветка `dev`): в репозитории лежит только ссылка, код подтягивается
+при клонировании. Дизайн морды зафиксирован в [DESIGN.md](DESIGN.md).
 
 ## Быстрый старт
 
+Требуется Rust 1.85+.
+
 ```sh
+git clone --recurse-submodules <url> cyclo-agent  # без флага — git submodule update --init
 cargo build --release
 # Только демон (без порта):
 ./target/release/cyclo-agent run --schedule ./examples/schedule.cyclo --db ./agent.db
@@ -92,9 +98,11 @@ cycle TCPCHECK(task) duration = 1m {
 
 ## API (всё, кроме `/`, `/healthz` и `/api/setup`, — по сессии)
 
-- `GET /` — дашборд (вшит в бинарь): вкладки События (runs, график latency,
-  ближайшие), Редактор («Проверить»/«Сохранить», шпаргалка), Настройки
-  (конфиг, сессия, смена пароля); светлая/тёмная тема с переключателем
+- `GET /` — морда (вшита в бинарь): сайдбар События / Дашборд / Редактор /
+  Настройки. События: статус расписания, график задержки, запуски с пагинацией,
+  ближайшие. Дашборд: графики + конструктор. Редактор: файлы, «Проверить» /
+  «Сохранить», шпаргалка. Настройки: конфиг, сессия, смена пароля.
+  Светлая/тёмная тема с переключателем.
 - `POST /api/setup {login,password,confirm}` — только при пустых users
 - `POST /api/login`, `POST /api/logout` (брутфорс: 5 попыток/мин с IP → 429)
 - `POST /api/password {current,new,confirm}` — смена пароля, чужие сессии закрываются
@@ -102,6 +110,9 @@ cycle TCPCHECK(task) duration = 1m {
 - `GET /api/runs?from&to&limit&offset&status` (limit ≤ 1000, статус из
   ok|fail|timeout|skipped, иначе 400) — `{runs, total}` для пагинации,
   `GET /api/next?n≤500&within_secs≤30д`
+- `GET /api/meta` — живые списки тегов/видов/задач/метрик для конструктора.
+- `GET /api/config`, `POST /api/config` — конфиг демона (директория, файл,
+  лимиты хранения, параллельность, lookahead).
 - `GET /api/schedule`, `POST /api/schedule {content}` (валидация перед записью, ≤1МБ)
 - `POST /api/validate {content}` → `{ok | code,message}` (≤1МБ)
 - `GET /api/files` → `{main, files[]}` (.cyclo рядом с расписанием),
@@ -151,3 +162,12 @@ systemd: `User=cyclo-agent Restart=always`, наружу — через reverse-
 
 - Только exec (без `sh -c`), всё от юзера демона, `timeout_s` убивает зависшее.
 - Простой idle: ~12 МБ RAM, ~0% CPU между событиями (сон до ближайшего).
+
+## Сборки
+
+CI собирает статические musl-бинари: ПК (`x86_64`, `aarch64`), роутеры
+(`armv7`, `aarch64`, `mipsel`, `mips`) — артефакты в прогоне workflow.
+
+## Лицензия
+
+MIT, см. [LICENSE](LICENSE).
