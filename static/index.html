@@ -11,78 +11,108 @@
   --bg:#141415; --card:#1d1d1f; --fg:#e8e8e6; --muted:#a3a3ab;
   --line:#2e2e31; --accent:#6b9bff; --ok:#3fb950; --bad:#f85149; --skip:#9a9aa0;
 }
-[data-density="roomy"] td,[data-density="roomy"] th{padding:.6em .7em;font-size:14px}
-[data-density="roomy"] .card{padding:1.3em}
 *{box-sizing:border-box}
 *::-webkit-scrollbar{width:10px;height:10px}
 *::-webkit-scrollbar-thumb{background:var(--line);border-radius:5px}
 *{scrollbar-width:thin;scrollbar-color:var(--line) transparent}
-body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);margin:0}
-header{display:flex;align-items:center;gap:.8em;padding:.7em 1.2em;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0}
-header h1{font-size:1.1em;margin:0 auto 0 0}
-.badge{font-size:.8em;padding:.15em .6em;border-radius:2em;border:1px solid var(--line);color:var(--muted)}
+body{font-family:system-ui,-apple-system,sans-serif;font-size:14px;background:var(--bg);color:var(--fg);margin:0}
+#shell{display:flex;min-height:100vh}
+.sidebar{width:200px;flex:none;background:var(--card);border-right:1px solid var(--line);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.logo{padding:.8em 1em;font-weight:600}
+.sidebar nav{flex:1;overflow-y:auto;padding:.3em 0}
+.nav-item{display:flex;align-items:center;gap:.5em;padding:.45em 1em;color:var(--muted);font-size:13px;border-left:2px solid transparent;cursor:pointer;user-select:none}
+.nav-item:hover{color:var(--fg)}
+.nav-item.active{color:var(--fg);font-weight:600;border-left-color:var(--accent);background:color-mix(in srgb, var(--fg) 5%, transparent)}
+.sidefoot{padding:.6em 1em;color:var(--muted);font-size:.85em}
+.content{flex:1;min-width:0;background:var(--bg)}
+.topbar{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:.5em 1.2em;display:flex;align-items:center;gap:.8em;z-index:5}
+.topbar .sp{flex:1}
+#ptitle{font-size:15px;font-weight:600}
+main{padding:1em 1.2em}
+#auth{max-width:520px;margin:4em auto;padding:0 1em}
+.badge{font-size:.8em;padding:.15em .6em;border-radius:2em;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
 .badge.ok{color:var(--ok);border-color:var(--ok)}
 .badge.bad{color:var(--bad);border-color:var(--bad);animation:pulse 1.6s infinite}
 @keyframes pulse{50%{opacity:.45}}
 button{font:inherit;padding:.35em .9em;border:1px solid var(--line);border-radius:.4em;background:var(--card);color:var(--fg);cursor:pointer}
 button:hover{border-color:var(--accent)}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-button.danger{border-color:var(--bad);color:var(--bad)}
+button.danger{border-color:var(--bad);color:var(--bad);background:var(--card)}
 button.danger:hover{background:color-mix(in srgb, var(--bad) 12%, transparent)}
+button:disabled{opacity:.45;cursor:default}
+button:disabled:hover{border-color:var(--line)}
 details summary{cursor:pointer;color:var(--accent)}
 pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap;line-height:1.5}
 input,select,textarea{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:.4em;padding:.35em .6em}
-main{max-width:1020px;margin:0 auto;padding:1.2em}
-nav.tabs{display:flex;gap:.3em;margin-bottom:1em}
-nav.tabs button{border:none;border-bottom:2px solid transparent;border-radius:0;padding:.5em 1em;color:var(--muted)}
-nav.tabs button.on{color:var(--fg);border-bottom-color:var(--accent);font-weight:600}
-.card{background:var(--card);border:1px solid var(--line);border-radius:.6em;padding:1em;margin-bottom:1em}
+.card{background:var(--card);border:1px solid var(--line);border-radius:.5em;padding:.9em 1em;margin-bottom:1em}
 .card h2{margin:.2em 0 .7em;font-size:1em}
+.chead{display:flex;align-items:center;justify-content:space-between;gap:.6em}
 .muted{color:var(--muted);font-size:.85em}
 table{border-collapse:collapse;width:100%}
-td,th{border-bottom:1px solid var(--line);padding:.35em .5em;font-size:13px;text-align:left}
+td,th{border-bottom:1px solid var(--line);padding:.3em .5em;font-size:13px;text-align:left}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.cut{white-space:nowrap;max-width:22em;overflow:hidden;text-overflow:ellipsis}
+[data-copy]{cursor:copy}
+.copyflash{background:color-mix(in srgb, var(--accent) 10%, transparent)}
 .scroll{max-height:30em;overflow:auto}
 .scroll thead th{position:sticky;top:0;background:var(--card);z-index:1}
 .scroll tbody tr:hover{background:color-mix(in srgb, var(--fg) 6%, transparent)}
 .ok{color:var(--ok)} .fail,.timeout{color:var(--bad)} .skipped{color:var(--skip)}
-.pill{display:inline-block;padding:.1em .6em;border-radius:2em;font-size:.85em;border:1px solid currentColor;white-space:nowrap}
-button:disabled{opacity:.45;cursor:default}
-button:disabled:hover{border-color:var(--line)}
-:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-canvas{width:100%;height:170px}
-#sched{width:100%;height:320px;font-family:var(--mono);font-size:13px}
-#diag{white-space:pre-wrap;font-family:var(--mono);font-size:12px;background:var(--bg);border:1px solid var(--line);border-radius:.4em;padding:.6em;margin-top:.6em;min-height:2.5em}
+.pill{border-radius:2em;border:1px solid currentColor;padding:0 .6em;display:inline-block;font-size:.85em;white-space:nowrap}
+.pill.ok{color:var(--ok)}
+.pill.fail,.pill.timeout{color:var(--bad)}
+.pill.skipped{color:var(--skip)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+:focus:not(:focus-visible){outline:none}
+.chartwrap{position:relative}
+canvas.chart{width:100%;height:170px;display:block}
+.tip{position:absolute;display:none;background:var(--card);border:1px solid var(--line);border-radius:.3em;padding:.35em .55em;font-family:var(--mono);font-size:12px;line-height:1.45;pointer-events:none;white-space:pre;z-index:3;max-width:90%}
+.dash-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:.8em}
+.dash-grid .card{margin-bottom:0}
+.editor{display:flex;flex-direction:column;height:calc(100vh - 120px);min-height:26em}
+.editor .toolbar{margin-bottom:.6em}
+#sched{flex:1;min-height:0;resize:none;border:none;outline:none;padding:.8em 1em;font:13px var(--mono);line-height:1.5;background:var(--bg);color:var(--fg);border-radius:.4em;width:100%}
+.estatus{display:flex;align-items:center;gap:.8em;padding:.4em 1em;border-top:1px solid var(--line);color:var(--muted);font-size:13px;margin-top:.6em}
+.estatus .sp{flex:1}
+#diag{white-space:pre-wrap;font-family:var(--mono);font-size:12px;background:var(--bg);border:1px solid var(--line);border-radius:.4em;padding:.6em;margin-top:.6em;min-height:2.5em;max-height:30vh;overflow:auto}
 .row{display:flex;gap:.6em;align-items:center;flex-wrap:wrap}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:1em}
-@media(max-width:700px){.grid2{grid-template-columns:1fr}}
-#dirty{color:var(--accent);font-size:.85em}
+@media(max-width:700px){
+  .sidebar{width:160px}
+  .grid2{grid-template-columns:1fr}
+  .dash-grid{grid-template-columns:1fr}
+}
 </style></head><body>
-<header>
-  <h1>cyclo-agent</h1>
-  <span id="health" class="badge">…</span>
-  <button id="theme" onclick="toggleTheme()" title="тема">◐</button>
-  <button id="density" onclick="toggleDensity()" title="плотность">плотно</button>
-</header>
-<main>
 <div id="auth"></div>
-<div id="app" hidden>
-  <nav class="tabs">
-    <button id="t-events" class="on" onclick="tab('events')">События</button>
-    <button id="t-dash" onclick="tab('dash')">Дашборд</button>
-    <button id="t-editor" onclick="tab('editor')">Редактор <span id="dirty" hidden>•</span></button>
-    <button id="t-settings" onclick="tab('settings')">Настройки</button>
-  </nav>
-
+<div id="shell" hidden>
+  <aside class="sidebar">
+    <div class="logo">cyclo-agent</div>
+    <nav>
+      <div class="nav-item active" id="t-events" onclick="tab('events')">События</div>
+      <div class="nav-item" id="t-dash" onclick="tab('dash')">Дашборд<span id="dashdot" hidden> •</span></div>
+      <div class="nav-item" id="t-editor" onclick="tab('editor')">Редактор<span id="dirty" hidden> •</span></div>
+      <div class="nav-item" id="t-settings" onclick="tab('settings')">Настройки</div>
+    </nav>
+    <div class="sidefoot" id="who"></div>
+  </aside>
+  <div class="content">
+    <div class="topbar">
+      <span id="ptitle">События</span>
+      <span class="sp"></span>
+      <span id="health" class="badge" aria-live="polite">…</span>
+      <button id="theme" onclick="toggleTheme()" title="тема">◐</button>
+      <button onclick="doLogout()">Выйти</button>
+    </div>
+    <main>
   <section id="v-events">
-    <div class="card"><h2>Расписание</h2><div id="schedline" class="muted"></div></div>
-    <div class="card"><h2>Задержка выполнений, мс</h2><canvas id="graph" width="940" height="170"></canvas></div>
+    <div class="card"><h2>Расписание</h2><div id="schedline" class="muted">нет данных</div></div>
+    <div class="card"><div class="chead"><h2>Задержка, мс</h2><span id="latstat"></span></div><div class="chartwrap"><canvas class="chart" id="graph" role="img" aria-label="график задержки"></canvas><div class="tip"></div></div></div>
     <div class="card"><h2>Последние запуски</h2>
       <div class="row" style="margin-bottom:.5em">
         <label class="muted">статус <select id="flt" onchange="runPage=0;loadRuns()"><option value="">все</option><option>ok</option><option>fail</option><option>timeout</option><option>skipped</option></select></label>
         <label class="muted">по <select id="rsize" onchange="runPage=0;loadRuns()"><option>50</option><option selected>100</option><option>200</option></select></label>
       </div>
-      <div class="scroll"><table><thead><tr><th>план</th><th>тип</th><th>cmd</th><th>теги</th><th>статус</th><th class="num">exit</th><th class="num">мс</th><th>stderr</th></tr></thead><tbody id="runs"></tbody></table></div>
+      <div class="scroll"><table><thead><tr><th scope="col">план</th><th scope="col">тип</th><th scope="col">команда</th><th scope="col">теги</th><th scope="col">статус</th><th scope="col" class="num">exit</th><th scope="col" class="num">мс</th><th scope="col">stderr</th></tr></thead><tbody id="runs"><tr><td colspan="8" class="muted">нет данных</td></tr></tbody></table></div>
       <div class="row" style="margin-top:.5em">
         <button id="rprev" onclick="runNav(-1)">‹ назад</button>
         <span id="rpage" class="muted"></span>
@@ -90,14 +120,14 @@ canvas{width:100%;height:170px}
       </div>
     </div>
     <div class="card"><h2>Ближайшие</h2>
-      <table><thead><tr><th>время</th><th>точка</th><th>cmd</th></tr></thead><tbody id="next"></tbody></table>
+      <table><thead><tr><th scope="col">время</th><th scope="col">точка</th><th scope="col">команда</th></tr></thead><tbody id="next"><tr><td colspan="3" class="muted">нет данных</td></tr></tbody></table>
     </div>
   </section>
 
   <section id="v-dash" hidden>
-    <div id="charts"></div>
-    <div class="card"><h2>Конструктор</h2>
-      <div class="scroll"><table><thead><tr><th></th><th>название</th><th>источник</th><th>значение</th><th>метрика</th><th>окно, с</th><th>тип</th><th>способ</th><th>агрегация</th><th>шаг, с</th></tr></thead>
+    <div id="charts" class="dash-grid"></div>
+    <div class="card" style="margin-top:.8em"><h2>Конструктор</h2>
+      <div class="scroll"><table><thead><tr><th scope="col"></th><th scope="col">название</th><th scope="col">источник</th><th scope="col">значение</th><th scope="col">метрика</th><th scope="col">окно, с</th><th scope="col">тип</th><th scope="col">способ</th><th scope="col">агрегация</th><th scope="col">шаг, с</th></tr></thead>
       <tbody id="ctable"></tbody></table></div>
       <div class="row" style="margin-top:.6em">
         <button class="primary" onclick="dashSave()">Сохранить дашборд</button>
@@ -109,21 +139,23 @@ canvas{width:100%;height:170px}
   </section>
 
   <section id="v-editor" hidden>
-    <div class="card"><h2>Расписание</h2>
-      <div class="row" style="margin-bottom:.6em">
+    <div class="card editor">
+      <div class="row toolbar">
         <label class="muted">файл <select id="efile" onchange="loadFile()"></select></label>
         <button onclick="newFile()">Новый</button>
-        <button class="danger" onclick="delFile()">Удалить</button>
         <input id="impurl" placeholder="https://…/*.cyclo" style="width:22em">
         <button onclick="importUrl()" title="скачать браузером и вставить в редактор">Вставить по URL</button>
+        <button class="danger" onclick="delFile()">Удалить</button>
       </div>
       <textarea id="sched" spellcheck="false"></textarea>
-      <div class="row" style="margin-top:.6em">
+      <div class="estatus">
+        <span id="estats">нет данных</span>
+        <span class="sp"></span>
         <button onclick="doValidate()">Проверить</button>
         <button class="primary" onclick="doSave()">Сохранить</button>
       </div>
-      <div id="diag"></div>
-      <details><summary>Туториал: агент и язык</summary><pre class="cheat">Синтаксис самого Cyclorithm — в вики: https://makspv.github.io/cyclorithm/
+      <div id="diag">нет данных</div>
+      <details id="cheat"><summary>Туториал: агент и язык</summary><pre class="cheat">Синтаксис самого Cyclorithm — в вики: https://makspv.github.io/cyclorithm/
 Здесь — только связка с агентом.
 
 1. Исполняется ОДИН файл (дефолт schedule.cyclo в рабочей директории,
@@ -139,6 +171,7 @@ canvas{width:100%;height:170px}
   exec: {"cmd": ..., "args": [...], "tags": ["web"], "timeout_s": 10}
   http: {"check": "http", "url": ..., "expect": 200, "contains": "ok", "tags": ["web"], "timeout_s": 10}
   tcp:  {"check": "tcp", "host": ..., "port": ..., "tags": ["web"], "timeout_s": 10}
+</pre></details>
     </div>
   </section>
 
@@ -156,8 +189,8 @@ canvas{width:100%;height:170px}
         <div class="muted" style="margin-top:.5em">Лимиты хранения применяются без рестарта; директория, файл и параллельность — после рестарта демона.</div>
       </div>
       <div class="card"><h2>Сессия</h2>
-        <div id="who" style="margin-bottom:.6em"></div>
-        <button onclick="doLogout()">Выйти</button>
+        <div id="who2" style="margin-bottom:.6em"></div>
+        <button class="danger" onclick="doLogout()">Выйти</button>
       </div>
     </div>
     <div class="card"><h2>Смена пароля</h2>
@@ -170,28 +203,49 @@ canvas{width:100%;height:170px}
       <div id="pwmsg" class="muted" style="margin-top:.5em"></div>
     </div>
   </section>
+    </main>
+  </div>
 </div>
-</main>
 <script>
 let cur = 'events', sched0 = '';
+const TITLES = {events:'События', dash:'Дашборд', editor:'Редактор', settings:'Настройки'};
 function themeInit(){ document.documentElement.dataset.theme = localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); }
-function toggleTheme(){ const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = t; localStorage.setItem('theme', t); }
-function densityInit(){ document.documentElement.dataset.density = localStorage.getItem('density') || 'compact'; densityLabel(); }
-function toggleDensity(){ const d = document.documentElement.dataset.density === 'roomy' ? 'compact' : 'roomy'; document.documentElement.dataset.density = d; localStorage.setItem('density', d); densityLabel(); }
-function densityLabel(){ document.getElementById('density').textContent = document.documentElement.dataset.density === 'roomy' ? 'свободно' : 'плотно'; }
-function tab(n){ cur = n; for (const t of ['events','dash','editor','settings']){ document.getElementById('v-'+t).hidden = t !== n; document.getElementById('t-'+t).classList.toggle('on', t === n); } if (n === 'events'){ loadRuns(); loadNext(); } if (n === 'dash'){ loadDash(); } if (n === 'editor'){ loadSched(); } if (n === 'settings'){ loadCfg(); } }
+function toggleTheme(){ const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = t; localStorage.setItem('theme', t); for (const cv of chartStore.keys()) paintChart(cv); }
+function tab(n){ cur = n; for (const t of ['events','dash','editor','settings']){ document.getElementById('v-'+t).hidden = t !== n; document.getElementById('t-'+t).classList.toggle('active', t === n); } document.getElementById('ptitle').textContent = TITLES[n]; if (n === 'events'){ loadRuns(); loadNext(); } if (n === 'dash'){ loadDash(); } if (n === 'editor'){ loadSched(); } if (n === 'settings'){ loadCfg(); } }
 const j = (m,u,b)=>fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
+// --- Формат значений (§9): единицы — в заголовках, не в ячейках.
+function fmtInt(n){ return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+function fmtVal(v){ const a = Math.abs(v); if (a >= 1000) return fmtInt(v); if (a >= 100) return String(Math.round(v)); return String(Math.round(v*10)/10); }
+function fmtBytes(n){ if (n < 1024) return n + ' Б'; const u = ['КБ','МБ','ГБ','ТБ']; let v = n, i = -1; do { v /= 1024; i++; } while (v >= 1024 && i < u.length-1); return (Math.round(v*10)/10) + ' ' + u[i]; }
+function fmtDur(ms){ if (ms < 1000) return '<1с'; const s = Math.floor(ms/1000); if (s < 60) return s + 'с'; const m = Math.floor(s/60); if (m < 60) return m + 'м ' + String(s%60).padStart(2,'0') + 'с'; return Math.floor(m/60) + 'ч ' + String(m%60).padStart(2,'0') + 'м'; }
+function fmtAbs(t){ return new Date(t).toLocaleString(); }
+function fmtRel(t){ const d = Date.now() - t, a = Math.abs(d), suf = d >= 0 ? 'назад' : ''; const pre = d < 0 ? 'через ' : '';
+  if (a < 60e3) return pre + Math.floor(a/1e3) + 'с ' + (suf || '').trim();
+  if (a < 3600e3) return pre + Math.floor(a/60e3) + 'м ' + (suf || '').trim();
+  const day = new Date(t).toDateString(), today = new Date().toDateString(), y = new Date(Date.now()-864e5).toDateString();
+  if (d >= 0 && a < 24*3600e3 && day === today) return Math.floor(a/3600e3) + 'ч назад';
+  if (d >= 0 && day === y) return 'вчера';
+  return fmtAbs(t); }
+// Копирование технических значений кликом (§10.1).
+document.addEventListener('click', e=>{
+  const el = e.target.closest('[data-copy]');
+  if (!el || !el.dataset.copy) return;
+  const done = ()=>{ el.classList.add('copyflash'); setTimeout(()=>el.classList.remove('copyflash'), 1000); };
+  if (navigator.clipboard) navigator.clipboard.writeText(el.dataset.copy).then(done, done); else done();
+});
+function cut(s){ s = String(s ?? ''); return s.length > 100 ? s.slice(0,100) + '…' : s; }
 async function refresh(){
   const st = await fetch('/api/status').then(r=>r.json());
-  const box = document.getElementById('auth'), app = document.getElementById('app');
+  const box = document.getElementById('auth'), shell = document.getElementById('shell');
   const h = document.getElementById('health');
-  if (st.setup_required){ box.innerHTML = `<div class="card"><h2>Первый запуск</h2><div class="row"><input id=l placeholder=логин><input id=p type=password placeholder="пароль ≥8"><input id=c type=password placeholder=повтор><button class="primary" onclick="setup()">Создать</button></div></div>`; app.hidden = true; h.textContent = 'setup'; h.className = 'badge'; return; }
-  if (!st.authenticated){ box.innerHTML = `<div class="card"><h2>Вход</h2><div class="row"><input id=l placeholder=логин><input id=p type=password placeholder=пароль><button class="primary" onclick="login()">Войти</button></div></div>`; app.hidden = true; h.textContent = 'login'; h.className = 'badge'; return; }
-  box.innerHTML = ''; app.hidden = false;
+  if (st.setup_required){ box.innerHTML = `<div class="card"><h2>Первый запуск</h2><div class="row"><input id="l" placeholder="логин"><input id="p" type="password" placeholder="пароль ≥8"><input id="c" type="password" placeholder="повтор"><button class="primary" onclick="setup()">Создать</button></div></div>`; shell.hidden = true; box.hidden = false; h.textContent = 'setup'; h.className = 'badge'; return; }
+  if (!st.authenticated){ box.innerHTML = `<div class="card"><h2>Вход</h2><div class="row"><input id="l" placeholder="логин"><input id="p" type="password" placeholder="пароль"><button class="primary" onclick="login()">Войти</button></div></div>`; shell.hidden = true; box.hidden = false; h.textContent = 'login'; h.className = 'badge'; return; }
+  box.innerHTML = ''; box.hidden = true; shell.hidden = false;
   h.textContent = st.schedule_valid ? (st.schedule_name || 'ok') : 'ошибка';
   h.className = 'badge ' + (st.schedule_valid ? 'ok' : 'bad');
   document.getElementById('schedline').textContent = `${st.schedule_name || '?'} — valid=${st.schedule_valid} ${st.schedule_error || ''}`;
   document.getElementById('who').textContent = 'вошли как ' + (st.login || '?');
+  document.getElementById('who2').textContent = 'вошли как ' + (st.login || '?');
   if (cur === 'events'){ loadRuns(); loadNext(); }
   if (cur === 'settings'){ loadCfg(); }
 }
@@ -205,17 +259,21 @@ async function loadCfg(){
   document.getElementById('s-conc').value = c.concurrency ?? '';
   document.getElementById('s-look').value = c.lookahead_secs ?? '';
 }
-async function saveCfg(){
+async function saveCfg(btn){
   const b = {directory: document.getElementById('s-dir').value,
     schedule_file: document.getElementById('s-file').value,
     retention_days: +document.getElementById('s-days').value || undefined,
     retention_max_rows: +document.getElementById('s-rows').value || undefined,
     concurrency: +document.getElementById('s-conc').value || undefined,
     lookahead_secs: +document.getElementById('s-look').value || undefined};
-  const r = await j('POST','/api/config',b);
-  document.getElementById('cfgmsg').textContent = r.ok
-    ? 'Сохранено. Директория/файл/параллельность — только после рестарта демона.'
-    : await r.text();
+  const btns = document.querySelectorAll('#v-settings button');
+  btns.forEach(x=>x.disabled = true);
+  try {
+    const r = await j('POST','/api/config',b);
+    document.getElementById('cfgmsg').textContent = r.ok
+      ? 'Настройки сохранены.'
+      : await r.text();
+  } finally { btns.forEach(x=>x.disabled = false); }
 }
 async function setup(){ const l=v('l'),p=v('p'),c=v('c');
   const r = await j('POST','/api/setup',{login:l,password:p,confirm:c});
@@ -230,27 +288,55 @@ function runNav(d){
   runPage = Math.min(pages - 1, Math.max(0, runPage + d));
   loadRuns();
 }
+function syncRunsUrl(){
+  const p = new URLSearchParams(location.search);
+  p.set('status', document.getElementById('flt').value);
+  p.set('size', runSize());
+  history.replaceState(null, '', location.pathname + '?' + p);
+}
 async function loadRuns(){
   const to = Date.now(), from = to - 24*3600e3, f = document.getElementById('flt').value;
   const size = runSize();
-  const q = new URLSearchParams({from, to, limit: size, offset: runPage*size});
-  if (f) q.set('status', f);
-  const d = await fetch('/api/runs?'+q).then(r=>r.json());
+  syncRunsUrl();
+  let d;
+  try { d = await fetch('/api/runs?'+new URLSearchParams({from, to, limit: size, offset: runPage*size, ...(f?{status:f}:{})})).then(async r=>{ if(!r.ok) throw new Error(await r.text()); return r.json(); }); }
+  catch(e){ document.getElementById('runs').innerHTML = `<tr><td colspan="8" class="muted">${esc(String(e.message||e))}</td></tr>`; return; }
   const runs = d.runs || [];
   runTotal = d.total || 0;
   const pages = Math.max(1, Math.ceil(runTotal / size));
   if (runPage > pages - 1){ runPage = pages - 1; return loadRuns(); }
-  document.getElementById('rpage').textContent = `стр. ${runPage+1} из ${pages} (всего ${runTotal})`;
+  document.getElementById('rpage').textContent = `стр. ${fmtInt(runPage+1)} из ${fmtInt(pages)} (всего ${fmtInt(runTotal)})`;
   document.getElementById('rprev').disabled = runPage <= 0;
   document.getElementById('rnext').disabled = runPage >= pages - 1;
-  document.getElementById('runs').innerHTML = runs.map(r=>`<tr><td>${new Date(r.scheduled_at).toLocaleString()}</td><td>${r.kind}</td><td>${esc(r.cmd)}</td><td>${esc((JSON.parse(r.tags||'[]')).join(','))}</td><td><span class="pill ${r.status}">${r.status}</span></td><td class="num">${r.exit_code ?? ''}</td><td class="num">${r.latency_ms}</td><td class="muted">${esc((r.err_tail||'').slice(0,100))}</td></tr>`).join('');
-  drawChart(document.getElementById('graph'), runs.slice().reverse().map(r=>({t: r.scheduled_at, v: r.latency_ms})), 'line', 'latency_ms');
+  document.getElementById('runs').innerHTML = runs.length ? runs.map(r=>{
+    const tags = JSON.parse(r.tags||'[]').join(',');
+    return `<tr><td>${fmtAbs(r.scheduled_at)}</td><td>${esc(r.kind)}</td><td class="cut" data-copy="${esc(r.cmd)}" title="${esc(r.cmd)}">${esc(cut(r.cmd))}</td><td>${esc(tags)}</td><td><span class="pill ${r.status}">${r.status}</span></td><td class="num">${r.exit_code ?? ''}</td><td class="num">${fmtVal(r.latency_ms)}</td><td class="muted cut" data-copy="${esc(r.err_tail||'')}" title="${esc(r.err_tail||'')}">${esc(cut(r.err_tail||''))}</td></tr>`;
+  }).join('') : `<tr><td colspan="8" class="muted">нет данных</td></tr>`;
+  const pts = runs.slice().reverse().map(r=>({t: r.scheduled_at, v: r.latency_ms}));
+  const evs = runs.map(r=>({t: r.scheduled_at, status: r.status, cmd: r.cmd, exit: r.exit_code}));
+  const fails = evs.filter(e=>e.status==='fail'||e.status==='timeout').length;
+  document.getElementById('latstat').innerHTML = runs.length
+    ? (fails ? `<span class="pill fail">● fail ${fmtInt(fails)}</span>` : `<span class="pill ok">● ok</span>`) : '';
+  renderChart(document.getElementById('graph'), pts, 'line', 'latency_ms', {events: evs, title: 'график задержки'});
 }
 async function loadNext(){
-  const nx = await fetch('/api/next?n=20').then(r=>r.json());
-  document.getElementById('next').innerHTML = (nx.events||[]).map(e=>`<tr><td>${new Date(e.time).toLocaleString()}</td><td>${e.point}.${e.action}</td><td>${esc(e.cmd)}</td></tr>`).join('');
+  let nx;
+  try { nx = await fetch('/api/next?n=20').then(async r=>{ if(!r.ok) throw new Error(await r.text()); return r.json(); }); }
+  catch(e){ document.getElementById('next').innerHTML = `<tr><td colspan="3" class="muted">${esc(String(e.message||e))}</td></tr>`; return; }
+  const ev = nx.events || [];
+  document.getElementById('next').innerHTML = ev.length ? ev.map(e=>`<tr><td>${fmtAbs(e.time)} (${fmtRel(e.time)})</td><td>${esc(e.point)}.${esc(e.action)}</td><td class="cut" data-copy="${esc(e.cmd)}" title="${esc(e.cmd)}">${esc(cut(e.cmd))}</td></tr>`).join('')
+    : `<tr><td colspan="3" class="muted">нет данных</td></tr>`;
 }
 let curFile = '';
+function edStats(){
+  const t = document.getElementById('sched').value;
+  const kb = new Blob([t]).size / 1024;
+  const lines = t ? t.split('\n').length : 0;
+  const dirty = t !== sched0;
+  document.getElementById('estats').textContent =
+    `${fmtInt(lines)} строк · ${(Math.round(kb*10)/10)} КБ` + (dirty ? ' · не сохранено' : '');
+  return dirty;
+}
 async function loadSched(){ await refreshFiles(); }
 async function refreshFiles(){
   const d = await fetch('/api/files').then(r=>r.json());
@@ -259,7 +345,8 @@ async function refreshFiles(){
   if (!curFile) curFile = (d.files||[]).find(f=>f.endsWith(d.main)) || (d.files||[])[0] || '';
   sel.value = curFile;
   const ta = document.getElementById('sched');
-  ta.oninput = () => { document.getElementById('dirty').hidden = ta.value === sched0; };
+  ta.oninput = () => { const dirty = edStats(); document.getElementById('dirty').hidden = !dirty; };
+  ta.onkeydown = e => { if ((e.ctrlKey || e.metaKey) && e.key === 's'){ e.preventDefault(); doSave(); } };
   await loadFile();
 }
 async function loadFile(){
@@ -269,7 +356,8 @@ async function loadFile(){
   const d = await fetch('/api/files?path='+encodeURIComponent(curFile)).then(r=>r.json());
   ta.value = d.content || ''; sched0 = ta.value;
   document.getElementById('dirty').hidden = true;
-  document.getElementById('diag').textContent = '';
+  document.getElementById('diag').textContent = 'нет данных';
+  edStats();
 }
 function newFile(){
   const p = prompt('Путь нового файла (например libs/holidays.cyclo):', 'libs/new.cyclo');
@@ -281,11 +369,12 @@ function newFile(){
   document.getElementById('sched').value = '// библиотека: только pred/const/таблицы, без schedule-блока\n';
   sched0 = '';
   document.getElementById('dirty').hidden = false;
+  edStats();
 }
 async function delFile(){
-  if (!curFile || !confirm('Удалить ' + curFile + '?')) return;
+  if (!curFile || !confirm(`Удалить \`${curFile}\`? Отменить нельзя.`)) return;
   const r = await fetch('/api/files?path='+encodeURIComponent(curFile), {method:'DELETE'});
-  document.getElementById('diag').textContent = r.ok ? 'Удалён' : await r.text();
+  document.getElementById('diag').textContent = r.ok ? 'Файл удалён.' : await r.text();
   if (r.ok){ curFile = ''; await refreshFiles(); }
 }
 async function importUrl(){
@@ -296,7 +385,8 @@ async function importUrl(){
     const t = await fetch(u).then(r=>{ if (!r.ok) throw new Error('HTTP '+r.status); return r.text(); });
     if (t.length > 1000000) throw new Error('слишком большой');
     document.getElementById('sched').value = t;
-    document.getElementById('dirty').hidden = document.getElementById('sched').value === sched0;
+    const dirty = edStats();
+    document.getElementById('dirty').hidden = !dirty;
     document.getElementById('diag').textContent = 'Вставлено по URL — выберите файл и сохраните.';
   } catch(e){ document.getElementById('diag').textContent = 'Не скачалось: ' + e.message; }
 }
@@ -309,26 +399,31 @@ async function mainContent(){
 async function doValidate(){
   const ta = document.getElementById('sched');
   const diag = document.getElementById('diag');
-  if (ta.value !== sched0){ diag.textContent = 'Есть несохранённые правки — сначала «Сохранить», проверка идёт по диску.'; return; }
+  if (ta.value !== sched0){ diag.textContent = 'Сначала сохраните файл.'; return; }
   const r = await j('POST','/api/validate',{content: await mainContent()}).then(r=>r.json());
-  diag.textContent = r.ok ? 'OK (главный файл, по диску)' : fmtDiag(r);
+  diag.textContent = r.ok ? 'Проверка пройдена.' : fmtDiag(r);
 }
 async function doSave(){
   const ta = document.getElementById('sched');
   const diag = document.getElementById('diag');
   if (!curFile){ diag.textContent = 'Нет файла.'; return; }
-  const s = await j('POST','/api/files',{path: curFile, content: ta.value});
-  if (!s.ok){ diag.textContent = await s.text(); return; }
-  sched0 = ta.value;
-  document.getElementById('dirty').hidden = true;
-  const r = await j('POST','/api/validate',{content: await mainContent()}).then(r=>r.json());
-  diag.textContent = r.ok ? 'Сохранено, расписание OK' : `Сохранено, но расписание битое: ${fmtDiag(r)}`;
-  refresh();
+  const btns = document.querySelectorAll('#v-editor .estatus button');
+  btns.forEach(x=>x.disabled = true);
+  try {
+    const s = await j('POST','/api/files',{path: curFile, content: ta.value});
+    if (!s.ok){ diag.textContent = await s.text(); return; }
+    sched0 = ta.value;
+    document.getElementById('dirty').hidden = true;
+    edStats();
+    const r = await j('POST','/api/validate',{content: await mainContent()}).then(r=>r.json());
+    diag.textContent = r.ok ? 'Файл сохранён.' : `Сохранено, но расписание битое: ${fmtDiag(r)}`;
+    refresh();
+  } finally { btns.forEach(x=>x.disabled = false); }
 }
-async function doLogout(){ await j('POST','/api/logout'); location.reload(); }
+async function doLogout(){ if (!confirm('Выйти? Сессия закроется.')) return; await j('POST','/api/logout'); location.reload(); }
 async function doPasswd(){
   const r = await j('POST','/api/password',{current:v('pw0'),new:v('pw1'),confirm:v('pw2')});
-  document.getElementById('pwmsg').textContent = r.ok ? 'Пароль сменён, чужие сессии закрыты' : await r.text();
+  document.getElementById('pwmsg').textContent = r.ok ? 'Пароль сменён.' : await r.text();
   if (r.ok){ document.getElementById('pw0').value = document.getElementById('pw1').value = document.getElementById('pw2').value = ''; }
 }
 function esc(s){ return String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -337,6 +432,217 @@ function fmtDiag(r){
   if (r.code === 'schedule-in-import') return 'schedule-in-import: schedule-блок только в главном файле (schedule.cyclo), в модулях — лишь pred/const/таблицы';
   return `${r.code}: ${r.message}`;
 }
+// --- График (§3.7): оси, сетка, nice-тики, crosshair, тултип, маркеры, пин.
+const chartStore = new Map();
+function niceTicks(mn, mx, maxN){
+  maxN = maxN || 5;
+  if (!isFinite(mn) || !isFinite(mx)) return [0, 1];
+  if (mn === mx){ mn -= 1; mx += 1; }
+  const span = mx - mn, step0 = span / maxN;
+  const mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const norm = step0 / mag;
+  let step = norm < 1.5 ? 1 : norm < 3.5 ? 2 : norm < 7.5 ? 5 : 10;
+  step *= mag;
+  const out = [];
+  for (let v = Math.floor(mn/step)*step; v <= mx + 1e-12; v += step){
+    out.push(+v.toFixed(12));
+    if (out.length > 10) break;
+  }
+  return out.length ? out : [mn, mx];
+}
+function renderChart(cv, pts, type, metric, extra){
+  chartStore.set(cv, Object.assign({pts: pts||[], type: type||'line', metric: metric||'', events: [], title: ''}, extra||{}));
+  if (!cv._ro){
+    cv._ro = true;
+    if (window.ResizeObserver) new ResizeObserver(()=>paintChart(cv)).observe(cv);
+    cv.addEventListener('mousemove', e=>chartHover(cv, e));
+    cv.addEventListener('mouseleave', ()=>chartLeave(cv));
+    cv.addEventListener('click', e=>chartClick(cv, e));
+    cv.addEventListener('touchstart', e=>{ if (e.touches.length) chartHover(cv, e.touches[0]); }, {passive:true});
+    cv.addEventListener('touchend', ()=>chartLeave(cv));
+  }
+  paintChart(cv);
+}
+function chartGeom(cv){
+  const W = cv.clientWidth || 600, H = 170, L = 48, B = 22, T = 8;
+  return {W, H, L, B, T, w: W-L-8, h: H-T-B};
+}
+function chartTheme(){
+  const dark = document.documentElement.dataset.theme === 'dark';
+  const cssv = n => (window.getComputedStyle ? getComputedStyle(document.documentElement).getPropertyValue(n).trim() : '');
+  return {
+    muted: cssv('--muted') || (dark ? '#a3a3ab' : '#6b6b70'),
+    line: cssv('--line') || (dark ? '#2e2e31' : '#dddcd8'),
+    accent: cssv('--accent') || (dark ? '#6b9bff' : '#2f6fed'),
+    ok: cssv('--ok') || (dark ? '#3fb950' : '#1a7f37'),
+    bad: cssv('--bad') || (dark ? '#f85149' : '#cf222e'),
+    card: cssv('--card') || (dark ? '#1d1d1f' : '#ffffff'),
+    bg: cssv('--bg') || (dark ? '#141415' : '#f4f4f2'),
+  };
+}
+function xTickFmt(t, span){ return span > 24*3600e3 ? new Date(t).toLocaleDateString([], {day:'2-digit',month:'2-digit'}) : new Date(t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
+function paintChart(cv, hover){
+  const st = chartStore.get(cv);
+  if (!st) return;
+  const g = chartGeom(cv), C = chartTheme();
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(g.W * dpr); cv.height = Math.round(g.H * dpr);
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, g.W, g.H);
+  const pts = st.pts;
+  const vs = pts.filter(p=>p.v !== null && p.v !== undefined).map(p=>p.v);
+  const ts = pts.filter(p=>p.t !== undefined).map(p=>p.t);
+  const t0 = ts.length ? Math.min(...ts) : Date.now(), t1 = ts.length ? Math.max(...ts) : Date.now();
+  const X = t => (t1 <= t0) ? g.L : g.L + (t - t0)/(t1 - t0)*g.w;
+  const Xi = i => pts.length < 2 ? g.L : g.L + i/(pts.length-1)*g.w;
+  let mn = vs.length ? Math.min(...vs) : 0, mx = vs.length ? Math.max(...vs) : 1;
+  const yt = niceTicks(mn, mx, 5);
+  const y0 = yt[0], y1 = yt[yt.length-1], span = (y1 - y0) || 1;
+  const Y = v => g.T + g.h - (v - y0)/span*g.h;
+  ctx.font = '12px system-ui,sans-serif';
+  // Сетка по y-тикам.
+  ctx.strokeStyle = C.line; ctx.lineWidth = 1;
+  ctx.textAlign = 'right'; ctx.fillStyle = C.muted;
+  for (const t of yt){
+    ctx.beginPath(); ctx.moveTo(g.L, Y(t)); ctx.lineTo(g.L+g.w, Y(t)); ctx.stroke();
+    ctx.fillText(fmtVal(t), g.L-6, Y(t)+4);
+  }
+  // Рамка осей.
+  ctx.beginPath(); ctx.moveTo(g.L, g.T); ctx.lineTo(g.L, g.T+g.h); ctx.lineTo(g.L+g.w, g.T+g.h); ctx.stroke();
+  // X-тики: 4–6 штук.
+  ctx.textAlign = 'center';
+  const n = Math.min(5, Math.max(1, pts.length-1));
+  for (let k = 0; k <= n; k++){
+    const i = Math.round(k/n*(pts.length-1));
+    if (pts[i] && pts[i].t !== undefined) ctx.fillText(xTickFmt(pts[i].t, t1-t0), Xi(i), g.T+g.h+15);
+  }
+  ctx.textAlign = 'left';
+  if (!vs.length){
+    ctx.fillStyle = C.muted;
+    ctx.fillText('нет данных', g.L+g.w/2-30, g.T+g.h/2);
+  } else {
+    ctx.strokeStyle = C.accent; ctx.fillStyle = C.accent; ctx.lineWidth = 1.5;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    if (st.type === 'dots'){
+      for (const [i,p] of pts.entries()){ if (p.v === null || p.v === undefined) continue; ctx.beginPath(); ctx.arc(Xi(i), Y(p.v), 2, 0, 7); ctx.fill(); }
+    } else if (st.type === 'bars'){
+      const w = Math.max(1, g.w/Math.max(1,pts.length)-1);
+      for (const [i,p] of pts.entries()){ if (p.v === null || p.v === undefined) continue; const y = Y(p.v); ctx.fillRect(Xi(i), y, w, g.T+g.h-y); }
+    } else {
+      ctx.beginPath(); let pen = false;
+      pts.forEach((p,i)=>{ if (p.v === null || p.v === undefined){ pen = false; return; } const x = Xi(i), y = Y(p.v); pen ? ctx.lineTo(x,y) : ctx.moveTo(x,y); pen = true; });
+      ctx.stroke();
+      if (pts.length < 100) for (const [i,p] of pts.entries()){ if (p.v === null || p.v === undefined) continue; ctx.beginPath(); ctx.arc(Xi(i), Y(p.v), 2, 0, 7); ctx.fill(); }
+    }
+  }
+  // Маркеры событий в окне.
+  st._mx = [];
+  const evs = (st.events||[]).filter(e=>e.t >= t0 && e.t <= t1).slice(0, 300);
+  for (const e of evs){
+    const x = X(e.t);
+    const bad = e.status === 'fail' || e.status === 'timeout';
+    ctx.strokeStyle = e.status === 'ok' ? C.ok : bad ? C.bad : C.muted;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, g.T); ctx.lineTo(x, g.T+g.h); ctx.stroke();
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.beginPath(); ctx.arc(x, g.T+2, 2, 0, 7); ctx.fill();
+    st._mx.push({x, e});
+  }
+  // Crosshair поверх.
+  const hov = hover || st._pin;
+  if (hov && vs.length){
+    ctx.strokeStyle = C.muted; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(hov.x, g.T); ctx.lineTo(hov.x, g.T+g.h); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(g.L, hov.y); ctx.lineTo(g.L+g.w, hov.y); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = C.accent;
+    ctx.beginPath(); ctx.arc(hov.px, hov.py, 4, 0, 7); ctx.fill();
+    ctx.strokeStyle = C.bg; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(hov.px, hov.py, 4, 0, 7); ctx.stroke();
+  }
+  cv.setAttribute('aria-label', `график ${st.title || st.metric}, ${fmtInt(vs.length)} точек, от ${fmtVal(mn)} до ${fmtVal(mx)}`);
+  st._geom = {X, Xi, Y, g, t0, t1};
+}
+function chartTip(cv){ const w = cv.parentElement; return (w && w.classList.contains('chartwrap')) ? w.querySelector('.tip') : null; }
+function chartNearest(cv, mx){
+  const st = chartStore.get(cv);
+  if (!st || !st._geom || !st.pts.length) return null;
+  const {Xi, Y, g} = st._geom;
+  let bi = 0, bd = 1e18;
+  st.pts.forEach((p,i)=>{ if (p.v === null || p.v === undefined) return; const d = Math.abs(Xi(i)-mx); if (d < bd){ bd = d; bi = i; } });
+  const p = st.pts[bi];
+  if (p.v === null || p.v === undefined) return null;
+  return {i: bi, p, px: Xi(bi), py: Y(p.v)};
+}
+function chartMarkerAt(cv, mx){
+  const st = chartStore.get(cv);
+  if (!st || !st._mx) return null;
+  for (const m of st._mx) if (Math.abs(m.x - mx) <= 4) return m.e;
+  return null;
+}
+function chartPos(cv, e){
+  const r = cv.getBoundingClientRect();
+  return {x: e.clientX - r.left, y: e.clientY - r.top};
+}
+function tipShow(cv, x, y, text){
+  const tip = chartTip(cv);
+  if (!tip) return;
+  tip.textContent = text;
+  tip.style.display = 'block';
+  const g = chartGeom(cv);
+  tip.style.left = Math.min(Math.max(0, x+12), g.W-160) + 'px';
+  tip.style.top = Math.max(0, y-10) + 'px';
+}
+function tipHide(cv){ const tip = chartTip(cv); if (tip && !chartStore.get(cv)._pin) tip.style.display = 'none'; }
+function tipTextPoint(p, metric){ return new Date(p.t).toLocaleString([], {hour:'2-digit',minute:'2-digit',second:'2-digit',day:'2-digit',month:'2-digit',year:'numeric'}) + '\n' + fmtVal(p.v) + (metric ? ' ' + metric : ''); }
+function tipTextEvent(e){ return new Date(e.t).toLocaleString([], {hour:'2-digit',minute:'2-digit',second:'2-digit',day:'2-digit',month:'2-digit',year:'numeric'}) + `\n${e.status}` + (e.exit !== undefined && e.exit !== null ? ` · exit ${e.exit}` : '') + (e.cmd ? `\ncmd: ${cut(e.cmd)}` : ''); }
+function chartHover(cv, e){
+  const m = chartPos(cv, e), st = chartStore.get(cv);
+  if (!st || !st._geom) return;
+  const mk = chartMarkerAt(cv, m.x);
+  if (mk){ paintChart(cv, null); tipShow(cv, m.x, m.y, tipTextEvent(mk)); st._hovEv = mk; return; }
+  const nr = chartNearest(cv, m.x);
+  if (!nr) return;
+  paintChart(cv, {x: nr.px, y: nr.py, px: nr.px, py: nr.py});
+  tipShow(cv, nr.px, nr.py, tipTextPoint(nr.p, st.metric));
+  st._hovEv = null; st._hov = nr;
+}
+function chartLeave(cv){
+  const st = chartStore.get(cv);
+  if (!st) return;
+  if (st._pin){ paintChart(cv, {x: st._pin.px, y: st._pin.py, px: st._pin.px, py: st._pin.py}); return; }
+  paintChart(cv, null); tipHide(cv);
+}
+function chartClick(cv, e){
+  const st = chartStore.get(cv);
+  if (!st) return;
+  const m = chartPos(cv, e);
+  const mk = chartMarkerAt(cv, m.x);
+  if (mk){
+    const nr = chartNearest(cv, m.x);
+    st._pin = nr ? {px: nr.px, py: nr.py} : {px: m.x, py: m.y};
+    paintChart(cv, {x: st._pin.px, y: st._pin.py, px: st._pin.px, py: st._pin.py});
+    tipShow(cv, st._pin.px, st._pin.py, tipTextEvent(mk));
+    return;
+  }
+  if (st._pin){ st._pin = null; paintChart(cv, null); tipHide(cv); }
+}
+document.addEventListener('keydown', e=>{
+  if (e.key === 'Escape'){
+    for (const cv of chartStore.keys()){ const st = chartStore.get(cv); if (st && st._pin){ st._pin = null; paintChart(cv, null); tipHide(cv); } }
+    const ch = document.getElementById('cheat');
+    if (ch && ch.open) ch.open = false;
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  }
+});
+window.addEventListener('beforeunload', e=>{
+  const ed = !document.getElementById('dirty').hidden;
+  const dd = !document.getElementById('dashdirty').hidden;
+  if ((document.getElementById('shell')||{}).hidden) return;
+  if (ed || dd){ e.preventDefault(); e.returnValue = ''; }
+});
+// --- Дашборды.
 let dashdef = null, dashmeta = {tags:[], kinds:[], jobs:[], metrics:['latency_ms','up']};
 let dashLoaded = false;
 async function loadDash(force){
@@ -359,65 +665,42 @@ async function loadDash(force){
   const to = Date.now();
   for (const [i, c] of (dashdef.charts||[]).entries()){
     const card = document.createElement('div'); card.className = 'card';
-    card.innerHTML = `<h2>${esc(c.title)}</h2><canvas width="940" height="170"></canvas><div class="muted chartsub">${esc(c.metric)} ${esc(c.agg||'avg')} · ${srcName(c)}</div>`;
+    card.innerHTML = `<div class="chead"><h2>${esc(c.title)}</h2><span class="cstat"></span></div><div class="chartwrap"><canvas class="chart" role="img"></canvas><div class="tip"></div></div><div class="muted chartsub">${esc(c.metric)} ${esc(c.agg||'avg')} · ${srcName(c)}</div>`;
     box.appendChild(card);
     const sub = card.querySelector('.chartsub');
+    const cv = card.querySelector('canvas');
     try {
       const mode = c.mode || 'bucket';
-      const q = new URLSearchParams({metric:c.metric, agg:c.agg||'avg', to, from: to - (c.window_secs||86400)*1000, mode, bucket_secs: c.bucket_secs||300});
+      const from = to - (c.window_secs||86400)*1000;
+      const q = new URLSearchParams({metric:c.metric, agg:c.agg||'avg', to, from, mode, bucket_secs: c.bucket_secs||300});
       if (c.tag) q.set('tag', c.tag); if (c.job) q.set('job', c.job); if (c.kind) q.set('kind', c.kind);
       const r = await fetch('/api/series?'+q);
-      if (!r.ok) { if (sub) sub.textContent += ' — ' + await r.text(); continue; }
+      if (!r.ok) { if (sub) sub.textContent += ' — ' + await r.text(); renderChart(cv, [], c.type||'line', c.metric, {title: c.title}); continue; }
       const s = await r.json();
-      if (sub) sub.textContent += (s.mode === 'raw' && s.count !== undefined) ? ` · запусков: ${s.count}` : (s.bucket_secs ? ` · шаг ${s.bucket_secs}с` : '');
-      drawChart(card.querySelector('canvas'), s.points||[], c.type||'line', c.metric);
-    } catch(e){ if (sub) sub.textContent += ' — ошибка загрузки'; }
+      if (sub) sub.textContent += (s.mode === 'raw' && s.count !== undefined) ? ` · запусков: ${fmtInt(s.count)}` : (s.bucket_secs ? ` · шаг ${fmtInt(s.bucket_secs)}с` : '');
+      let evs = [];
+      try {
+        const rr = await fetch('/api/runs?'+new URLSearchParams({from, to, limit: 500}));
+        if (rr.ok){
+          const dd = await rr.json();
+          evs = (dd.runs||[]).filter(x=>{
+            if (c.tag){ try { if (!JSON.parse(x.tags||'[]').includes(c.tag)) return false; } catch(e){ return false; } }
+            if (c.job && x.cmd !== c.job) return false;
+            if (c.kind && x.kind !== c.kind) return false;
+            return true;
+          }).map(x=>({t: x.scheduled_at, status: x.status, cmd: x.cmd, exit: x.exit_code}));
+          const fails = evs.filter(x=>x.status==='fail'||x.status==='timeout').length;
+          card.querySelector('.cstat').innerHTML = evs.length
+            ? (fails ? `<span class="pill fail">● fail ${fmtInt(fails)}</span>` : `<span class="pill ok">● ok</span>`) : '';
+        }
+      } catch(e){}
+      renderChart(cv, s.points||[], c.type||'line', c.metric, {events: evs, title: c.title});
+    } catch(e){ if (sub) sub.textContent += ' — ошибка загрузки'; renderChart(cv, [], c.type||'line', c.metric, {title: c.title}); }
   }
 }
 function srcName(c){ return c.tag ? 'тег '+c.tag : c.job ? 'задача '+c.job : c.kind ? 'тип '+c.kind : 'всё'; }
-function drawChart(cv, pts, type, metric){
-  // Чёткость: рисуем в пикселях экрана, координаты — логические 940×170.
-  const VW = 940, VH = 170, dpr = window.devicePixelRatio || 1;
-  cv.width = Math.round(VW * dpr); cv.height = Math.round(VH * dpr);
-  const ctx = cv.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const dark = document.documentElement.dataset.theme === 'dark';
-  // Цвета — из переменных темы (hex-фолбэки на случай отсутствия CSS).
-  const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-  const C = {
-    muted: cssv('--muted') || (dark ? '#a3a3ab' : '#6b6b70'),
-    line: cssv('--line') || (dark ? '#2e2e31' : '#dddcd8'),
-    accent: cssv('--accent') || (dark ? '#6b9bff' : '#2f6fed'),
-  };
-  ctx.clearRect(0,0,VW,VH);
-  const vs = pts.filter(p=>p.v !== null && p.v !== undefined).map(p=>p.v);
-  ctx.fillStyle = C.muted;
-  ctx.font = '11px system-ui,sans-serif';
-  ctx.fillText(metric || '', 44, 12);
-  const L = 44, B = 16, W = VW - L - 6, H = VH - B - 18;
-  ctx.strokeStyle = C.line; ctx.beginPath();
-  ctx.moveTo(L, 16); ctx.lineTo(L, 16+H); ctx.lineTo(L+W, 16+H); ctx.stroke();
-  if (!vs.length){ ctx.fillText('нет данных', L + 8, 16 + H/2); return; }
-  const mn = Math.min(...vs), mx = Math.max(...vs), span = (mx - mn) || 1;
-  const X = i => pts.length < 2 ? L : L + i/(pts.length-1)*W;
-  const Y = v => 16 + H - ((v-mn)/span)*H;
-  ctx.fillText(fmtN(mx), 2, 24); ctx.fillText(fmtN(mn), 2, 16+H);
-  const ticks = Math.min(4, pts.length - 1);
-  for (let k = 0; k <= ticks; k++){
-    const i = Math.round(k/ticks*(pts.length-1));
-    if (pts[i] && pts[i].t) ctx.fillText(new Date(pts[i].t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}), X(i)-14, VH-2);
-  }
-  const col = C.accent;
-  ctx.strokeStyle = col; ctx.fillStyle = col;
-  if (type === 'dots'){ for (const [i,p] of pts.entries()){ if (p.v === null || p.v === undefined) continue; ctx.beginPath(); ctx.arc(X(i), Y(p.v), 2.5, 0, 7); ctx.fill(); } return; }
-  if (type === 'bars'){ const w = Math.max(1, W/pts.length - 1); for (const [i,p] of pts.entries()){ if (p.v === null || p.v === undefined) continue; const y = Y(p.v); ctx.fillRect(X(i), y, w, 16+H-y); } return; }
-  ctx.beginPath(); let pen = false;
-  pts.forEach((p,i)=>{ if (p.v === null || p.v === undefined){ pen = false; return; } const x = X(i), y = Y(p.v); pen ? ctx.lineTo(x,y) : ctx.moveTo(x,y); pen = true; });
-  ctx.stroke();
-}
-function fmtN(v){ return Math.abs(v) >= 100 ? Math.round(v).toString() : (Math.round(v*100)/100).toString(); }
-function dashMark(){ document.getElementById('dashdirty').hidden = false; document.getElementById('t-dash').textContent = 'Дашборд •'; }
-function dashClean(){ document.getElementById('dashdirty').hidden = true; document.getElementById('t-dash').textContent = 'Дашборд'; }
+function dashMark(){ document.getElementById('dashdirty').hidden = false; document.getElementById('dashdot').hidden = false; }
+function dashClean(){ document.getElementById('dashdirty').hidden = true; document.getElementById('dashdot').hidden = true; }
 function sel(opts, val, extra){ return `<select ${extra||''}>` + opts.map(o=>`<option ${o===val?'selected':''}>${esc(o)}</option>`).join('') + `</select>`; }
 function selSrc(val){
   const opts = [['all','всё'],['tag','тег'],['job','задача'],['kind','тип']];
@@ -447,7 +730,7 @@ function renderDashTable(){
       <td>${sel(['avg','min','max','p50','p99','count'], c.agg||'avg', 'class="f-agg"'+dis)}</td>
       <td><input class="f-bucket" type="number" value="${c.bucket_secs||300}" style="width:5em"${dis}></td></tr>`;
   }).join('');
-  tb.innerHTML = rows + `<tr id="ghost"><td><button onclick="chartAdd()" title="добавить">+</button></td><td colspan="9" class="muted">новая строка — кнопка + слева</td></tr>`;
+  tb.innerHTML = rows + `<tr id="ghost"><td><button onclick="chartAdd()" title="добавить">+</button></td><td colspan="9" class="muted">нет данных</td></tr>`;
   tb.onchange = readDashTable;
   tb.oninput = readDashTable;
 }
@@ -489,9 +772,22 @@ function chartAdd(){
 async function dashReset(){ await loadDash(true); dashClean(); document.getElementById('dashmsg').textContent = ''; }
 async function dashSave(){
   readDashTableSilent();
-  const r = await j('POST','/api/dashboards',{content: JSON.stringify(dashdef)});
-  document.getElementById('dashmsg').textContent = r.ok ? 'Сохранено' : await r.text();
-  if (r.ok){ dashClean(); loadDash(true); }
+  const btns = document.querySelectorAll('#v-dash .card button');
+  btns.forEach(x=>x.disabled = true);
+  try {
+    const r = await j('POST','/api/dashboards',{content: JSON.stringify(dashdef)});
+    document.getElementById('dashmsg').textContent = r.ok ? 'Дашборд сохранён.' : await r.text();
+    if (r.ok){ dashClean(); loadDash(true); }
+  } finally { btns.forEach(x=>x.disabled = false); }
 }
-themeInit(); densityInit(); refresh(); setInterval(()=>{ if (document.getElementById('app').hidden) return; if (cur === 'events') refresh(); else if (cur === 'dash') loadDash(); }, 30000);
+// Фильтры из URL при входе (§10.3).
+(function(){
+  try {
+    const p = new URLSearchParams(location.search);
+    const f = document.getElementById('flt'), s = document.getElementById('rsize');
+    if (p.get('status') !== null) f.value = p.get('status');
+    if (p.get('size') !== null) s.value = p.get('size');
+  } catch(e){}
+})();
+themeInit(); refresh(); setInterval(()=>{ if (document.getElementById('shell').hidden) return; if (cur === 'events') refresh(); else if (cur === 'dash') loadDash(); }, 30000);
 </script></body></html>
