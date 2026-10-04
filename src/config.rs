@@ -6,6 +6,10 @@ pub struct Config {
     pub db: PathBuf,
     /// Адрес веб-морды; None — демон без веба.
     pub web: Option<String>,
+    /// Файл дашбордов конструктора (дефолт — рядом с БД).
+    pub dashboards: PathBuf,
+    /// dashboards задан явно (файл/флаг), а не выведен из пути БД.
+    pub dashboards_explicit: bool,
     pub poll_secs: u64,
     pub lookahead_secs: u64,
     pub concurrency: usize,
@@ -18,6 +22,8 @@ impl Default for Config {
             schedule: PathBuf::from("/etc/cyclo-agent/schedule.cyclo"),
             db: PathBuf::from("/var/lib/cyclo-agent/agent.db"),
             web: None,
+            dashboards: PathBuf::from("/var/lib/cyclo-agent/dashboards.json"),
+            dashboards_explicit: false,
             poll_secs: 10,
             lookahead_secs: 60,
             concurrency: 4,
@@ -31,6 +37,7 @@ struct FileCfg {
     schedule: Option<PathBuf>,
     db: Option<PathBuf>,
     web: Option<String>,
+    dashboards: Option<PathBuf>,
     listen: Option<String>,
     poll_secs: Option<u64>,
     lookahead_secs: Option<u64>,
@@ -57,6 +64,13 @@ impl Config {
                     }
                     if let Some(v) = f.web.or(f.listen) {
                         cfg.web = Some(v);
+                    }
+                    if let Some(v) = f.dashboards {
+                        cfg.dashboards = v;
+                        cfg.dashboards_explicit = true;
+                    } else if let Some(dir) = cfg.db.parent() {
+                        // Дефолт — рядом с БД (пересчёт после возможного --db).
+                        cfg.dashboards = dir.join("dashboards.json");
                     }
                     if let Some(v) = f.poll_secs {
                         cfg.poll_secs = v.max(1);

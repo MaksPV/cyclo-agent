@@ -95,6 +95,12 @@ cycle TCPCHECK(task) duration = 1m {
 - `GET /api/runs?from&to&limit` (limit ≤ 1000), `GET /api/next?n≤500&within_secs≤30д`
 - `GET /api/schedule`, `POST /api/schedule {content}` (валидация перед записью, ≤1МБ)
 - `POST /api/validate {content}` → `{ok | code,message}` (≤1МБ)
+- `GET /api/series?tag&job&kind&metric&agg&from&to&bucket_secs` — побакетные
+  точки `{t, v|null}`; метрика — `latency_ms`, `up` (1/0 из статуса),
+  `exit_code` или числовой путь в `result` (`result.status_code`, ...);
+  агрегация `avg|min|max|p50|p99|count`, окно ≤90д, бакетов ≤2000
+- `GET /api/dashboards` — дефолт, если файла нет; `POST /api/dashboards {content}`
+  (≤256КБ, `{version:1, charts:[{title,metric,agg,type:line|dots|bars,window_secs,bucket_secs,tag?|job?|kind?}]}`)
 
 Сессии: HttpOnly + SameSite=Lax, TTL 12ч.
 

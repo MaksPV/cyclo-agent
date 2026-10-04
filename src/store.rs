@@ -210,7 +210,7 @@ impl Store {
             Ok(s) => s,
             Err(_) => return vec![],
         };
-        st.query_map(params![from, to, limit.clamp(1, 1000)], |r| {
+        st.query_map(params![from, to, limit.clamp(1, 100_000)], |r| {
             Ok(Run {
                 id: r.get(0)?,
                 job_key: r.get(1)?,
@@ -238,5 +238,10 @@ impl Store {
             "DELETE FROM runs WHERE scheduled_at<?",
             params![older_than_ms],
         );
+    }
+
+    /// Точки для серий: всё окно разом (лимит 100k), фильтры — в вызывателе.
+    pub fn series_points(&self, from: i64, to: i64) -> Vec<Run> {
+        self.list_runs(from, to, 100_000)
     }
 }

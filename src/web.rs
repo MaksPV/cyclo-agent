@@ -60,6 +60,11 @@ pub fn router(app: App) -> axum::Router {
         )
         .route("/api/validate", axum::routing::post(validate))
         .route("/api/password", axum::routing::post(password))
+        .route("/api/series", axum::routing::get(series))
+        .route(
+            "/api/dashboards",
+            axum::routing::get(get_dashboards).post(save_dashboards),
+        )
         .route("/healthz", axum::routing::get(|| async { "ok" }))
         .layer(CookieManagerLayer::new())
         .with_state(app)
@@ -220,8 +225,14 @@ async fn runs(
     let now = now_ms();
     let to = q.to.unwrap_or(now);
     let from = q.from.unwrap_or(now - 24 * 3_600_000);
-    Json(serde_json::to_value(app.store.list_runs(from, to, q.limit.unwrap_or(200))).unwrap())
-        .into_response()
+    Json(
+        serde_json::to_value(
+            app.store
+                .list_runs(from, to, q.limit.unwrap_or(200).clamp(1, 1000)),
+        )
+        .unwrap(),
+    )
+    .into_response()
 }
 
 #[derive(serde::Deserialize)]
@@ -274,6 +285,238 @@ struct PasswordBody {
 #[derive(serde::Deserialize)]
 struct ScheduleBody {
     content: String,
+}
+
+#[derive(serde::Deserialize)]
+struct SeriesQuery {
+    tag: Option<String>,
+    job: Option<String>,
+    kind: Option<String>,
+    metric: Option<String>,
+    agg: Option<String>,
+    from: Option<i64>,
+    to: Option<i64>,
+    bucket_secs: Option<i64>,
+}
+
+/// Число по пути метрики: встроенные (latency_ms, up, exit_code) и любой
+/// числовой путь в result (`result.status_code`, ...). Bool — 0/1.
+/// Нет пути — None (пустая серия, не ошибка: поле могли удалить).
+fn metric_value(run: &crate::store::Run, metric: &str) -> Option<f64> {
+    match metric {
+        "latency_ms" => Some(run.latency_ms as f64),
+        "up" => Some(if run.status == "ok" { 1.0 } else { 0.0 }),
+        "exit_code" => run.exit_code.map(|v| v as f64),
+        _ => {
+            let path = metric.strip_prefix("result.")?;
+            let v: serde_json::Value = serde_json::from_str(&run.result).ok()?;
+            let mut cur = &v;
+            for part in path.split('.') {
+                cur = cur.get(part)?;
+            }
+            match cur {
+                serde_json::Value::Number(n) => n.as_f64(),
+                serde_json::Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+                _ => None,
+            }
+        }
+    }
+}
+
+fn tags_of(run: &crate::store::Run) -> Vec<String> {
+    serde_json::from_str(&run.tags).unwrap_or_default()
+}
+
+fn agg_value(agg: &str, mut xs: Vec<f64>) -> Option<f64> {
+    if xs.is_empty() {
+        return None;
+    }
+    match agg {
+        "min" => xs.iter().cloned().reduce(f64::min),
+        "max" => xs.iter().cloned().reduce(f64::max),
+        "count" => Some(xs.len() as f64),
+        "p50" | "p99" => {
+            xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let rank = if agg == "p50" { 0.5 } else { 0.99 };
+            let i = ((rank * xs.len() as f64).ceil() as usize).saturating_sub(1);
+            xs.get(i).copied()
+        }
+        _ => Some(xs.iter().sum::<f64>() / xs.len() as f64), // avg и неизвестное
+    }
+}
+
+async fn series(
+    State(app): State<App>,
+    cookies: Cookies,
+    Query(q): Query<SeriesQuery>,
+) -> impl IntoResponse {
+    if authed(&cookies, &app).is_none() {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let now = now_ms();
+    let to = q.to.unwrap_or(now);
+    let from = q.from.unwrap_or(to - 24 * 3_600_000);
+    if to <= from || to - from > 90 * 86_400_000 {
+        return (StatusCode::BAD_REQUEST, "bad range (max 90d)".to_owned()).into_response();
+    }
+    let metric = q.metric.unwrap_or_else(|| "latency_ms".to_owned());
+    let agg = q.agg.unwrap_or_else(|| "avg".to_owned());
+    let mut bucket_ms = q.bucket_secs.unwrap_or(0).max(0) * 1000;
+    if bucket_ms <= 0 {
+        bucket_ms = ((to - from) / 200).max(1000);
+    }
+    // Бакетов не больше 2000 — иначе укрупняем.
+    let n = ((to - from) / bucket_ms) as usize + 1;
+    if n > 2000 {
+        bucket_ms = (to - from) / 2000 + 1;
+    }
+    let mut buckets: Vec<Vec<f64>> = vec![Vec::new(); ((to - from) / bucket_ms) as usize + 1];
+    for r in app.store.series_points(from, to) {
+        if let Some(tag) = &q.tag {
+            if !tags_of(&r).iter().any(|t| t == tag) {
+                continue;
+            }
+        }
+        if let Some(job) = &q.job {
+            if !r.cmd.contains(job.as_str()) {
+                continue;
+            }
+        }
+        if let Some(kind) = &q.kind {
+            if r.kind != *kind {
+                continue;
+            }
+        }
+        if let Some(v) = metric_value(&r, &metric) {
+            let i = ((r.scheduled_at - from) / bucket_ms) as usize;
+            if let Some(b) = buckets.get_mut(i) {
+                b.push(v);
+            }
+        }
+    }
+    let points: Vec<serde_json::Value> = buckets
+        .into_iter()
+        .enumerate()
+        .map(|(i, xs)| {
+            serde_json::json!({"t": from + i as i64 * bucket_ms, "v": agg_value(&agg, xs)})
+        })
+        .collect();
+    Json(serde_json::json!({
+        "metric": metric, "agg": agg,
+        "bucket_secs": bucket_ms / 1000, "points": points,
+    }))
+    .into_response()
+}
+
+fn default_dashboards() -> serde_json::Value {
+    serde_json::json!({
+        "version": 1,
+        "charts": [
+            {"title": "latency (все)", "metric": "latency_ms", "agg": "p50",
+             "type": "line", "window_secs": 86400, "bucket_secs": 300},
+            {"title": "up (все)", "metric": "up", "agg": "avg",
+             "type": "dots", "window_secs": 86400, "bucket_secs": 300},
+        ],
+    })
+}
+
+/// Проверка формы дашбордов конструктора (версию и поля — строго, иначе 400).
+fn check_dashboards(v: &serde_json::Value) -> Result<(), String> {
+    let version = v.get("version").and_then(|x| x.as_u64()).unwrap_or(0);
+    if version != 1 {
+        return Err("need {\"version\": 1, ...}".to_owned());
+    }
+    let charts = v
+        .get("charts")
+        .and_then(|x| x.as_array())
+        .ok_or("need charts[]")?;
+    if charts.len() > 100 {
+        return Err("too many charts (max 100)".to_owned());
+    }
+    for c in charts {
+        let title = c.get("title").and_then(|x| x.as_str()).unwrap_or("");
+        if title.is_empty() || title.len() > 200 {
+            return Err("chart needs title ≤200".to_owned());
+        }
+        if c.get("metric")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .is_empty()
+        {
+            return Err("chart needs metric".to_owned());
+        }
+        match c.get("agg").and_then(|x| x.as_str()).unwrap_or("avg") {
+            "avg" | "min" | "max" | "p50" | "p99" | "count" => {}
+            other => return Err(format!("bad agg '{other}'")),
+        }
+        match c.get("type").and_then(|x| x.as_str()).unwrap_or("line") {
+            "line" | "dots" | "bars" => {}
+            other => return Err(format!("bad type '{other}'")),
+        }
+        let window = c.get("window_secs").and_then(|x| x.as_i64()).unwrap_or(0);
+        if !(1..=30 * 86_400).contains(&window) {
+            return Err("window_secs 1..2592000".to_owned());
+        }
+        let bucket = c.get("bucket_secs").and_then(|x| x.as_i64()).unwrap_or(0);
+        if !(1..=86_400).contains(&bucket) {
+            return Err("bucket_secs 1..86400".to_owned());
+        }
+    }
+    Ok(())
+}
+
+async fn get_dashboards(State(app): State<App>, cookies: Cookies) -> impl IntoResponse {
+    if authed(&cookies, &app).is_none() {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    match std::fs::read_to_string(&app.cfg.dashboards) {
+        Ok(t) => match serde_json::from_str::<serde_json::Value>(&t) {
+            Ok(v) => Json(v).into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        },
+        Err(_) => Json(default_dashboards()).into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct DashboardsBody {
+    content: String,
+}
+
+async fn save_dashboards(
+    State(app): State<App>,
+    cookies: Cookies,
+    Json(b): Json<DashboardsBody>,
+) -> impl IntoResponse {
+    if authed(&cookies, &app).is_none() {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    if b.content.len() > 256_000 {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "too large (max 256KB)".to_owned(),
+        )
+            .into_response();
+    }
+    let v: serde_json::Value = match serde_json::from_str(&b.content) {
+        Ok(v) => v,
+        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+    if let Err(e) = check_dashboards(&v) {
+        return (StatusCode::BAD_REQUEST, e).into_response();
+    }
+    if let Some(dir) = app.cfg.dashboards.parent() {
+        if !dir.as_os_str().is_empty() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+    }
+    match std::fs::write(
+        &app.cfg.dashboards,
+        serde_json::to_string_pretty(&v).unwrap(),
+    ) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
 }
 
 async fn password(

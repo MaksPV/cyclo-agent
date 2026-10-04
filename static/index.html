@@ -51,6 +51,7 @@ pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
 <div id="app" hidden>
   <nav class="tabs">
     <button id="t-events" class="on" onclick="tab('events')">События</button>
+    <button id="t-dash" onclick="tab('dash')">Дашборд</button>
     <button id="t-editor" onclick="tab('editor')">Редактор <span id="dirty" hidden>•</span></button>
     <button id="t-settings" onclick="tab('settings')">Настройки</button>
   </nav>
@@ -62,10 +63,30 @@ pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
       <div class="row" style="margin-bottom:.5em">
         <label class="muted">статус <select id="flt" onchange="loadRuns()"><option value="">все</option><option>ok</option><option>fail</option><option>timeout</option><option>skipped</option></select></label>
       </div>
-      <table><thead><tr><th>план</th><th>cmd</th><th>статус</th><th>exit</th><th>мс</th><th>stderr</th></tr></thead><tbody id="runs"></tbody></table>
+      <table><thead><tr><th>план</th><th>вид</th><th>cmd</th><th>теги</th><th>статус</th><th>exit</th><th>мс</th><th>stderr</th></tr></thead><tbody id="runs"></tbody></table>
     </div>
     <div class="card"><h2>Ближайшие</h2>
       <table><thead><tr><th>время</th><th>точка</th><th>cmd</th></tr></thead><tbody id="next"></tbody></table>
+    </div>
+  </section>
+
+  <section id="v-dash" hidden>
+    <div id="charts"></div>
+    <div class="card"><h2>Конструктор</h2>
+      <div id="clist" class="muted" style="margin-bottom:.6em"></div>
+      <div class="row">
+        <input id="c-title" placeholder="название" style="width:14em">
+        <select id="c-src"><option value="all">всё</option><option value="tag">тег</option><option value="job">джоба</option><option value="kind">вид</option></select>
+        <input id="c-srcv" placeholder="значение (для тег/джоба/вид)" style="width:14em">
+        <input id="c-metric" placeholder="метрика: latency_ms | up | result.status_code" style="width:22em">
+        <select id="c-agg"><option>avg</option><option>min</option><option>max</option><option>p50</option><option>p99</option><option>count</option></select>
+        <select id="c-type"><option value="line">линия</option><option value="dots">точки</option><option value="bars">столбцы</option></select>
+        <input id="c-win" type="number" value="86400" title="окно, с" style="width:7em">
+        <input id="c-bucket" type="number" value="300" title="бакет, с" style="width:6em">
+        <button onclick="chartAdd()">Добавить</button>
+        <button class="primary" onclick="dashSave()">Сохранить дашборд</button>
+      </div>
+      <div id="dashmsg" class="muted" style="margin-top:.5em"></div>
     </div>
   </section>
 
@@ -118,7 +139,7 @@ pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
 let cur = 'events', sched0 = '';
 function themeInit(){ document.documentElement.dataset.theme = localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); }
 function toggleTheme(){ const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = t; localStorage.setItem('theme', t); }
-function tab(n){ cur = n; for (const t of ['events','editor','settings']){ document.getElementById('v-'+t).hidden = t !== n; document.getElementById('t-'+t).classList.toggle('on', t === n); } if (n === 'events'){ loadRuns(); loadNext(); } if (n === 'editor'){ loadSched(); } }
+function tab(n){ cur = n; for (const t of ['events','dash','editor','settings']){ document.getElementById('v-'+t).hidden = t !== n; document.getElementById('t-'+t).classList.toggle('on', t === n); } if (n === 'events'){ loadRuns(); loadNext(); } if (n === 'dash'){ loadDash(); } if (n === 'editor'){ loadSched(); } }
 const j = (m,u,b)=>fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
 async function refresh(){
   const st = await fetch('/api/status').then(r=>r.json());
@@ -144,7 +165,7 @@ async function loadRuns(){
   const to = Date.now(), from = to - 24*3600e3, f = document.getElementById('flt').value;
   let runs = await fetch(`/api/runs?from=${from}&to=${to}&limit=200`).then(r=>r.json());
   if (f) runs = runs.filter(r=>r.status === f);
-  document.getElementById('runs').innerHTML = runs.map(r=>`<tr><td>${new Date(r.scheduled_at).toLocaleString()}</td><td>${esc(r.cmd)} ${(JSON.parse(r.args||'[]')).join(' ')}</td><td class="${r.status}">${r.status}</td><td>${r.exit_code ?? ''}</td><td>${r.latency_ms}</td><td class="muted">${esc((r.err_tail||'').slice(0,100))}</td></tr>`).join('');
+  document.getElementById('runs').innerHTML = runs.map(r=>`<tr><td>${new Date(r.scheduled_at).toLocaleString()}</td><td>${r.kind}</td><td>${esc(r.cmd)}</td><td>${esc((JSON.parse(r.tags||'[]')).join(','))}</td><td class="${r.status}">${r.status}</td><td>${r.exit_code ?? ''}</td><td>${r.latency_ms}</td><td class="muted">${esc((r.err_tail||'').slice(0,100))}</td></tr>`).join('');
   const cv = document.getElementById('graph'), ctx = cv.getContext('2d');
   const dark = document.documentElement.dataset.theme === 'dark';
   ctx.clearRect(0,0,cv.width,cv.height);
@@ -182,5 +203,58 @@ async function doPasswd(){
   if (r.ok){ document.getElementById('pw0').value = document.getElementById('pw1').value = document.getElementById('pw2').value = ''; }
 }
 function esc(s){ return String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-themeInit(); refresh(); setInterval(()=>{ if (cur === 'events' && !document.getElementById('app').hidden) refresh(); }, 10000);
+let dashdef = null;
+async function loadDash(){
+  dashdef = await fetch('/api/dashboards').then(r=>r.json());
+  renderDashList();
+  const box = document.getElementById('charts'); box.innerHTML = '';
+  const to = Date.now();
+  for (const [i, c] of (dashdef.charts||[]).entries()){
+    const card = document.createElement('div'); card.className = 'card';
+    card.innerHTML = `<h2>${esc(c.title)}</h2><canvas width="940" height="170"></canvas><div class="muted">${esc(c.metric)} ${esc(c.agg||'avg')} · ${srcName(c)}</div>`;
+    box.appendChild(card);
+    const q = new URLSearchParams({metric:c.metric, agg:c.agg||'avg', to, from: to - (c.window_secs||86400)*1000, bucket_secs: c.bucket_secs||300});
+    if (c.tag) q.set('tag', c.tag); if (c.job) q.set('job', c.job); if (c.kind) q.set('kind', c.kind);
+    const s = await fetch('/api/series?'+q).then(r=>r.json());
+    drawChart(card.querySelector('canvas'), s.points||[], c.type||'line');
+  }
+}
+function srcName(c){ return c.tag ? 'тег '+c.tag : c.job ? 'джоба '+c.job : c.kind ? 'вид '+c.kind : 'всё'; }
+function drawChart(cv, pts, type){
+  const ctx = cv.getContext('2d'), dark = document.documentElement.dataset.theme === 'dark';
+  ctx.clearRect(0,0,cv.width,cv.height);
+  const vs = pts.filter(p=>p.v !== null && p.v !== undefined).map(p=>p.v);
+  if (!vs.length){ ctx.fillStyle = dark ? '#9a9aa0' : '#6b6b70'; ctx.fillText('нет данных', 10, 20); return; }
+  const mn = Math.min(...vs), mx = Math.max(...vs), span = (mx - mn) || 1;
+  const X = i => pts.length < 2 ? 0 : i/(pts.length-1)*cv.width;
+  const Y = v => cv.height-10-((v-mn)/span)*(cv.height-20);
+  ctx.strokeStyle = dark ? '#6b9bff' : '#2f6fed'; ctx.fillStyle = ctx.strokeStyle;
+  if (type === 'dots'){ for (const [i,p] of pts.entries()){ if (p.v === null || p.v === undefined) continue; ctx.beginPath(); ctx.arc(X(i), Y(p.v), 2.5, 0, 7); ctx.fill(); } return; }
+  if (type === 'bars'){ const w = Math.max(1, cv.width/pts.length - 1); for (const [i,p] of pts.entries()){ if (p.v === null || p.v === undefined) continue; const y = Y(p.v); ctx.fillRect(X(i), y, w, cv.height-10-y); } return; }
+  ctx.beginPath(); let pen = false;
+  pts.forEach((p,i)=>{ if (p.v === null || p.v === undefined){ pen = false; return; } const x = X(i), y = Y(p.v); pen ? ctx.lineTo(x,y) : ctx.moveTo(x,y); pen = true; });
+  ctx.stroke();
+}
+function renderDashList(){
+  document.getElementById('clist').innerHTML = (dashdef.charts||[]).map((c,i)=>`${i+1}. ${esc(c.title)} <button onclick="chartDel(${i})">✕</button>`).join(' ');
+}
+function chartDel(i){ dashdef.charts.splice(i,1); renderDashList(); }
+function chartAdd(){
+  const src = document.getElementById('c-src').value, srcv = document.getElementById('c-srcv').value.trim();
+  const c = {title: document.getElementById('c-title').value.trim() || 'без названия',
+    metric: document.getElementById('c-metric').value.trim(), agg: document.getElementById('c-agg').value,
+    type: document.getElementById('c-type').value,
+    window_secs: +document.getElementById('c-win').value || 86400,
+    bucket_secs: +document.getElementById('c-bucket').value || 300};
+  if (!c.metric){ alert('нужна метрика'); return; }
+  if (src === 'tag') c.tag = srcv; else if (src === 'job') c.job = srcv; else if (src === 'kind') c.kind = srcv;
+  if ((src !== 'all') && !srcv){ alert('нужно значение источника'); return; }
+  dashdef.charts.push(c); renderDashList();
+}
+async function dashSave(){
+  const r = await j('POST','/api/dashboards',{content: JSON.stringify(dashdef)});
+  document.getElementById('dashmsg').textContent = r.ok ? 'Сохранено' : await r.text();
+  if (r.ok) loadDash();
+}
+themeInit(); refresh(); setInterval(()=>{ if (document.getElementById('app').hidden) return; if (cur === 'events') refresh(); else if (cur === 'dash') loadDash(); }, 30000);
 </script></body></html>

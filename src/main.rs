@@ -36,6 +36,9 @@ enum Cmd {
         /// Адрес веб-морды, например 127.0.0.1:8080. Без флага — только демон.
         #[arg(long)]
         web: Option<String>,
+        /// Файл дашбордов конструктора (дефолт — рядом с БД).
+        #[arg(long)]
+        dashboards: Option<PathBuf>,
     },
     /// Сбросить сессии (таблица sessions чистится целиком).
     ResetAuth {
@@ -58,13 +61,28 @@ async fn main() {
             store.clear_sessions();
             println!("sessions cleared; delete users row in agent.db to re-run setup");
         }
-        Cmd::Run { schedule, db, web } => {
+        Cmd::Run {
+            schedule,
+            db,
+            web,
+            dashboards,
+        } => {
             let mut cfg = config::Config::load(cli.config);
             if let Some(v) = schedule {
                 cfg.schedule = v;
             }
             if let Some(v) = db {
                 cfg.db = v;
+                // БД сменили, а дашборды явно не заданы — кладём рядом с новой БД.
+                if dashboards.is_none() && !cfg.dashboards_explicit {
+                    if let Some(dir) = cfg.db.parent() {
+                        cfg.dashboards = dir.join("dashboards.json");
+                    }
+                }
+            }
+            if let Some(v) = dashboards {
+                cfg.dashboards = v;
+                cfg.dashboards_explicit = true;
             }
             if web.is_some() {
                 cfg.web = web;
