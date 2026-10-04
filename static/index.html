@@ -315,13 +315,23 @@ function fmtDiag(r){
   return `${r.code}: ${r.message}`;
 }
 let dashdef = null, dashmeta = {tags:[], kinds:[], jobs:[], metrics:['latency_ms','up']};
-async function loadDash(){
-  let def;
-  try { def = await fetch('/api/dashboards').then(r=>{ if (!r.ok) throw 0; return r.json(); }); }
-  catch(e){ return; }
-  dashdef = def;
-  try { dashmeta = await fetch('/api/meta').then(r=>r.json()); } catch(e){}
-  renderDashList(); dashClean();
+let dashLoaded = false;
+async function loadDash(force){
+  // Конструктор перерисовываем только при первой загрузке, сбросе и после
+  // сохранения — иначе автообновление сносило бы несохранённые строки.
+  if (force || !dashLoaded){
+    let def;
+    try { def = await fetch('/api/dashboards').then(r=>{ if (!r.ok) throw 0; return r.json(); }); }
+    catch(e){ return; }
+    dashdef = def;
+    dashLoaded = true;
+    try { dashmeta = await fetch('/api/meta').then(r=>r.json()); } catch(e){}
+    renderDashList(); dashClean();
+  } else {
+    // Несохранённые правки подхватываем для отрисовки, таблицу не трогаем.
+    readDashTableSilent();
+    try { dashmeta = await fetch('/api/meta').then(r=>r.json()); } catch(e){}
+  }
   const box = document.getElementById('charts'); box.innerHTML = '';
   const to = Date.now();
   for (const [i, c] of (dashdef.charts||[]).entries()){
@@ -441,12 +451,12 @@ function chartAdd(){
   dashdef.charts.push({title:'новый', metric: dashmeta.metrics[0] || 'latency_ms', agg:'avg', type:'line', window_secs:86400, bucket_secs:300, mode:'raw'});
   renderDashTable(); dashMark();
 }
-async function dashReset(){ await loadDash(); dashClean(); document.getElementById('dashmsg').textContent = ''; }
+async function dashReset(){ await loadDash(true); dashClean(); document.getElementById('dashmsg').textContent = ''; }
 async function dashSave(){
   readDashTableSilent();
   const r = await j('POST','/api/dashboards',{content: JSON.stringify(dashdef)});
   document.getElementById('dashmsg').textContent = r.ok ? 'Сохранено' : await r.text();
-  if (r.ok){ dashClean(); loadDash(); }
+  if (r.ok){ dashClean(); loadDash(true); }
 }
 themeInit(); refresh(); setInterval(()=>{ if (document.getElementById('app').hidden) return; if (cur === 'events') refresh(); else if (cur === 'dash') loadDash(); }, 30000);
 </script></body></html>
