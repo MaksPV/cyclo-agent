@@ -63,7 +63,7 @@ pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
       <div class="row" style="margin-bottom:.5em">
         <label class="muted">статус <select id="flt" onchange="loadRuns()"><option value="">все</option><option>ok</option><option>fail</option><option>timeout</option><option>skipped</option></select></label>
       </div>
-      <table><thead><tr><th>план</th><th>вид</th><th>cmd</th><th>теги</th><th>статус</th><th>exit</th><th>мс</th><th>stderr</th></tr></thead><tbody id="runs"></tbody></table>
+      <table><thead><tr><th>план</th><th>тип</th><th>cmd</th><th>теги</th><th>статус</th><th>exit</th><th>мс</th><th>stderr</th></tr></thead><tbody id="runs"></tbody></table>
     </div>
     <div class="card"><h2>Ближайшие</h2>
       <table><thead><tr><th>время</th><th>точка</th><th>cmd</th></tr></thead><tbody id="next"></tbody></table>
@@ -73,7 +73,7 @@ pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
   <section id="v-dash" hidden>
     <div id="charts"></div>
     <div class="card"><h2>Конструктор</h2>
-      <table><thead><tr><th></th><th>название</th><th>источник</th><th>значение</th><th>метрика</th><th>агрегация</th><th>вид</th><th>окно, с</th><th>бакет, с</th></tr></thead>
+      <table><thead><tr><th></th><th>название</th><th>источник</th><th>значение</th><th>метрика</th><th>агрегация</th><th>тип</th><th>окно, с</th></tr></thead>
       <tbody id="ctable"></tbody></table>
       <div class="row" style="margin-top:.6em">
         <button class="primary" onclick="dashSave()">Сохранить дашборд</button>
@@ -112,10 +112,9 @@ pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
 
 3. Виды задач (циклы-обёртки делить по видам: блок вычисляет
   все поля сразу, чужое поле — unknown-field):
-  exec: {"cmd": ..., "args": [...]}
-  http: {"check": "http", "url": ..., "expect": 200, "contains": "ok"}
-  tcp:  {"check": "tcp", "host": ..., "port": ...}
-  общее: "tags": ["web"], "timeout_s": 10.</pre></details>
+  exec: {"cmd": ..., "args": [...], "tags": ["web"], "timeout_s": 10}
+  http: {"check": "http", "url": ..., "expect": 200, "contains": "ok", "tags": ["web"], "timeout_s": 10}
+  tcp:  {"check": "tcp", "host": ..., "port": ..., "tags": ["web"], "timeout_s": 10}
     </div>
   </section>
 
@@ -307,13 +306,13 @@ async function loadDash(){
     const card = document.createElement('div'); card.className = 'card';
     card.innerHTML = `<h2>${esc(c.title)}</h2><canvas width="940" height="170"></canvas><div class="muted">${esc(c.metric)} ${esc(c.agg||'avg')} · ${srcName(c)}</div>`;
     box.appendChild(card);
-    const q = new URLSearchParams({metric:c.metric, agg:c.agg||'avg', to, from: to - (c.window_secs||86400)*1000, bucket_secs: c.bucket_secs||300});
+    const q = new URLSearchParams({metric:c.metric, agg:c.agg||'avg', to, from: to - (c.window_secs||86400)*1000});
     if (c.tag) q.set('tag', c.tag); if (c.job) q.set('job', c.job); if (c.kind) q.set('kind', c.kind);
     const s = await fetch('/api/series?'+q).then(r=>r.json());
     drawChart(card.querySelector('canvas'), s.points||[], c.type||'line', c.metric);
   }
 }
-function srcName(c){ return c.tag ? 'тег '+c.tag : c.job ? 'джоба '+c.job : c.kind ? 'вид '+c.kind : 'всё'; }
+function srcName(c){ return c.tag ? 'тег '+c.tag : c.job ? 'задача '+c.job : c.kind ? 'тип '+c.kind : 'всё'; }
 function drawChart(cv, pts, type, metric){
   const ctx = cv.getContext('2d'), dark = document.documentElement.dataset.theme === 'dark';
   ctx.clearRect(0,0,cv.width,cv.height);
@@ -346,22 +345,24 @@ function fmtN(v){ return Math.abs(v) >= 100 ? Math.round(v).toString() : (Math.r
 function dashMark(){ document.getElementById('dashdirty').hidden = false; document.getElementById('t-dash').textContent = 'Дашборд •'; }
 function dashClean(){ document.getElementById('dashdirty').hidden = true; document.getElementById('t-dash').textContent = 'Дашборд'; }
 function sel(opts, val, extra){ return `<select ${extra||''}>` + opts.map(o=>`<option ${o===val?'selected':''}>${esc(o)}</option>`).join('') + `</select>`; }
-function srcOf(c){ return c.tag ? 'tag' : c.job ? 'job' : c.kind ? 'kind' : 'all'; }
+function selSrc(val){
+  const opts = [['all','всё'],['tag','тег'],['job','задача'],['kind','тип']];
+  return `<select class="f-src">` + opts.map(([v,t])=>`<option value="${v}" ${v===val?'selected':''}>${t}</option>`).join('') + `</select>`;
+}
 function srcVal(c){ return c.tag || c.job || c.kind || ''; }
 function renderDashTable(){
   const tb = document.getElementById('ctable');
   const rows = (dashdef.charts||[]).map((c,i)=>{
-    const src = srcOf(c);
+    const src = c.tag ? 'tag' : c.job ? 'job' : c.kind ? 'kind' : 'all';
     const vals = src === 'tag' ? dashmeta.tags : src === 'job' ? dashmeta.jobs : src === 'kind' ? dashmeta.kinds : [];
     return `<tr data-i="${i}"><td><button onclick="chartDel(${i})">✕</button></td>
       <td><input class="f-title" value="${esc(c.title||'')}" style="width:11em"></td>
-      <td>${sel(['all','tag','job','kind'], src, 'class="f-src"')}</td>
+      <td>${selSrc(src)}</td>
       <td>${sel(vals, srcVal(c), 'class="f-srcv"')}</td>
       <td>${sel(dashmeta.metrics, c.metric, 'class="f-metric"')}</td>
       <td>${sel(['avg','min','max','p50','p99','count'], c.agg||'avg', 'class="f-agg"')}</td>
       <td>${sel(['line','dots','bars'], c.type||'line', 'class="f-type"')}</td>
-      <td><input class="f-win" type="number" value="${c.window_secs||86400}" style="width:6em"></td>
-      <td><input class="f-bucket" type="number" value="${c.bucket_secs||300}" style="width:5em"></td></tr>`;
+      <td><input class="f-win" type="number" value="${c.window_secs||86400}" style="width:6em"></td></tr>`;
   }).join('');
   tb.innerHTML = rows + `<tr id="ghost"><td><button onclick="chartAdd()" title="добавить">+</button></td><td colspan="8" class="muted">новая строка — кнопка + слева</td></tr>`;
   tb.onchange = readDashTable;
@@ -371,7 +372,7 @@ function readDashTable(){
   const tb = document.getElementById('ctable');
   dashdef.charts = [...tb.querySelectorAll('tr[data-i]')].map(tr=>{
     const g = cl => tr.querySelector(cl).value, gi = cl => +tr.querySelector(cl).value || 0;
-    const c = {title: g('.f-title'), metric: g('.f-metric'), agg: g('.f-agg'), type: g('.f-type'), window_secs: gi('.f-win'), bucket_secs: gi('.f-bucket')};
+    const c = {title: g('.f-title'), metric: g('.f-metric'), agg: g('.f-agg'), type: g('.f-type'), window_secs: gi('.f-win')};
     const src = g('.f-src'), v = g('.f-srcv');
     if ((src === 'tag' || src === 'job' || src === 'kind') && v) c[src] = v;
     return c;
@@ -394,7 +395,7 @@ function chartDel(i){ readDashTableSilent(); dashdef.charts.splice(i,1); renderD
 function readDashTableSilent(){ try { const tb = document.getElementById('ctable'); tb.onchange = null; tb.oninput = null; readDashTable(); tb.onchange = readDashTable; tb.oninput = readDashTable; } catch(e){} }
 function chartAdd(){
   readDashTableSilent();
-  dashdef.charts.push({title:'новый', metric: dashmeta.metrics[0] || 'latency_ms', agg:'avg', type:'line', window_secs:86400, bucket_secs:300});
+  dashdef.charts.push({title:'новый', metric: dashmeta.metrics[0] || 'latency_ms', agg:'avg', type:'line', window_secs:86400});
   renderDashTable(); dashMark();
 }
 async function dashReset(){ await loadDash(); dashClean(); document.getElementById('dashmsg').textContent = ''; }
