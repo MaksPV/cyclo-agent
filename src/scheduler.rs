@@ -142,12 +142,15 @@ pub async fn run_loop(
                         started_at: t,
                         finished_at: t,
                         status: "skipped".to_owned(),
-                        cmd: job.cmd.clone(),
-                        args: serde_json::to_string(&job.args).unwrap_or_default(),
+                        kind: crate::jobs::kind_name(&job.kind).to_owned(),
+                        tags: serde_json::to_string(&job.tags).unwrap_or_default(),
+                        cmd: crate::jobs::describe(&job),
+                        args: String::new(),
                         exit_code: None,
                         latency_ms: 0,
                         out_tail: String::new(),
                         err_tail: "missed by more than 60s".to_owned(),
+                        result: "{}".to_owned(),
                     });
                 } else {
                     let store2 = store.clone();
@@ -224,10 +227,31 @@ pub fn next_jobs(
         .iter()
         .filter_map(|ev| {
             let j = to_job(ev.time, &ev.point, &ev.action, &ev.action_attrs)?;
-            Some(serde_json::json!({
+            let mut o = serde_json::json!({
                 "time": ev.time, "point": j.point, "action": j.action,
-                "cmd": j.cmd, "args": j.args, "timeout_s": j.timeout_secs,
-            }))
+                "kind": crate::jobs::kind_name(&j.kind),
+                "tags": j.tags, "timeout_s": j.timeout_secs,
+            });
+            match &j.kind {
+                crate::jobs::Kind::Exec { cmd, args } => {
+                    o["cmd"] = cmd.clone().into();
+                    o["args"] = args.clone().into();
+                }
+                crate::jobs::Kind::Http {
+                    url,
+                    expect,
+                    contains,
+                } => {
+                    o["url"] = url.clone().into();
+                    o["expect"] = (*expect).into();
+                    o["contains"] = contains.clone().into();
+                }
+                crate::jobs::Kind::Tcp { host, port } => {
+                    o["host"] = host.clone().into();
+                    o["port"] = (*port).into();
+                }
+            }
+            Some(o)
         })
         .collect())
 }

@@ -11,12 +11,15 @@ pub struct Run {
     pub started_at: i64,
     pub finished_at: i64,
     pub status: String,
+    pub kind: String,
+    pub tags: String,
     pub cmd: String,
     pub args: String,
     pub exit_code: Option<i64>,
     pub latency_ms: i64,
     pub out_tail: String,
     pub err_tail: String,
+    pub result: String,
 }
 
 #[derive(Clone)]
@@ -32,15 +35,29 @@ impl Store {
             }
         }
         let conn = Connection::open(path).map_err(|e| e.to_string())?;
+        // Ранняя разработка, миграций нет: старую таблицу runs без колонки
+        // kind сносим целиком (users/sessions не трогаем).
+        let needs_runs: bool = conn
+            .prepare("SELECT kind FROM runs LIMIT 0")
+            .map(|_| false)
+            .unwrap_or(true);
+        if needs_runs {
+            conn.execute_batch(
+                "DROP TABLE IF EXISTS runs;
+                 CREATE TABLE runs(
+                  id INTEGER PRIMARY KEY AUTOINCREMENT, job_key TEXT UNIQUE,
+                  scheduled_at INTEGER, started_at INTEGER, finished_at INTEGER,
+                  status TEXT, kind TEXT, tags TEXT, cmd TEXT, args TEXT,
+                  exit_code INTEGER NULL, latency_ms INTEGER,
+                  out_tail TEXT, err_tail TEXT, result TEXT);
+                 CREATE INDEX IF NOT EXISTS idx_runs_time ON runs(scheduled_at);
+                 CREATE INDEX IF NOT EXISTS idx_runs_status_time ON runs(status, scheduled_at);
+                 CREATE INDEX IF NOT EXISTS idx_runs_kind_time ON runs(kind, scheduled_at);",
+            )
+            .map_err(|e| e.to_string())?;
+        }
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS runs(
-              id INTEGER PRIMARY KEY AUTOINCREMENT, job_key TEXT UNIQUE,
-              scheduled_at INTEGER, started_at INTEGER, finished_at INTEGER,
-              status TEXT, cmd TEXT, args TEXT, exit_code INTEGER NULL,
-              latency_ms INTEGER, out_tail TEXT, err_tail TEXT);
-             CREATE INDEX IF NOT EXISTS idx_runs_time ON runs(scheduled_at);
-             CREATE INDEX IF NOT EXISTS idx_runs_status_time ON runs(status, scheduled_at);
-             CREATE TABLE IF NOT EXISTS users(
+            "CREATE TABLE IF NOT EXISTS users(
               id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT UNIQUE,
               password_hash TEXT, created_at INTEGER);
              CREATE TABLE IF NOT EXISTS sessions(
@@ -160,20 +177,23 @@ impl Store {
         self.lock()
             .execute(
                 "INSERT OR IGNORE INTO runs(job_key, scheduled_at, started_at, finished_at,
-                 status, cmd, args, exit_code, latency_ms, out_tail, err_tail)
-                 VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                 status, kind, tags, cmd, args, exit_code, latency_ms, out_tail, err_tail, result)
+                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 params![
                     r.job_key,
                     r.scheduled_at,
                     r.started_at,
                     r.finished_at,
                     r.status,
+                    r.kind,
+                    r.tags,
                     r.cmd,
                     r.args,
                     r.exit_code,
                     r.latency_ms,
                     r.out_tail,
-                    r.err_tail
+                    r.err_tail,
+                    r.result
                 ],
             )
             .map(|n| n == 1)
@@ -184,7 +204,7 @@ impl Store {
         let conn = self.lock();
         let mut st = match conn.prepare(
             "SELECT id, job_key, scheduled_at, started_at, finished_at, status,
-             cmd, args, exit_code, latency_ms, out_tail, err_tail
+             kind, tags, cmd, args, exit_code, latency_ms, out_tail, err_tail, result
              FROM runs WHERE scheduled_at>=? AND scheduled_at<? ORDER BY scheduled_at DESC LIMIT ?",
         ) {
             Ok(s) => s,
@@ -198,12 +218,15 @@ impl Store {
                 started_at: r.get(3)?,
                 finished_at: r.get(4)?,
                 status: r.get(5)?,
-                cmd: r.get(6)?,
-                args: r.get(7)?,
-                exit_code: r.get(8)?,
-                latency_ms: r.get(9)?,
-                out_tail: r.get(10)?,
-                err_tail: r.get(11)?,
+                kind: r.get(6)?,
+                tags: r.get(7)?,
+                cmd: r.get(8)?,
+                args: r.get(9)?,
+                exit_code: r.get(10)?,
+                latency_ms: r.get(11)?,
+                out_tail: r.get(12)?,
+                err_tail: r.get(13)?,
+                result: r.get(14)?,
             })
         })
         .map(|it| it.filter_map(|x| x.ok()).collect())

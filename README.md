@@ -57,6 +57,32 @@ schedule "Agent" {
 исполняется. Hot reload: правка файла (вотчер 5с), SIGHUP; битый файл —
 старый план продолжает работать, ошибка видна в `/api/status`.
 
+## Виды задач
+
+Исполняется только событие с `cmd` или `check` в `action_attrs`:
+
+```cyclo
+cycle EXEC(task) duration = 1m {
+  0m: JOB.fire() {"cmd": task.cmd, "args": task.args, "tags": task.tags, "timeout_s": task.timeout_s};
+}
+cycle HTTPCHECK(task) duration = 1m {
+  0m: JOB.fire() {"check": "http", "url": task.url, "expect": task.expect, "contains": task.contains, "tags": task.tags, "timeout_s": task.timeout_s};
+}
+cycle TCPCHECK(task) duration = 1m {
+  0m: JOB.fire() {"check": "tcp", "host": task.host, "port": task.port, "tags": task.tags, "timeout_s": task.timeout_s};
+}
+```
+
+- `cmd` — внешняя команда без shell (`args` — массив строк).
+  Циклы лучше разделять по видам: блок вычисляет все поля сразу,
+  отсутствующее поле в мапе — `unknown-field` в момент развёртки.
+- `check: "http"` — GET; `ok`, если код == `expect` (без `expect` — любой
+  2xx) и тело содержит `contains` (без него — не проверяется).
+  В `result`: `status_code`, `bytes`, `matched`; тело — в `out_tail`.
+- `check: "tcp"` — connect; `ok`, если порт открылся за `timeout_s`.
+- `tags` — массив строк (`["web", "prod"]`), хранятся с запуском.
+- Неизвестный `check` — событие игнорируется (опечатка видна отсутствием запусков).
+
 ## API (всё, кроме `/`, `/healthz` и `/api/setup`, — по сессии)
 
 - `GET /` — дашборд (вшит в бинарь): вкладки События (runs, график latency,
