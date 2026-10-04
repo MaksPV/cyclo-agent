@@ -8,19 +8,29 @@
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
 [data-theme="dark"]{
-  --bg:#161617; --card:#1e1e20; --fg:#e8e8e6; --muted:#9a9aa0;
-  --line:#333336; --accent:#6b9bff; --ok:#3fb950; --bad:#f85149; --skip:#9a9aa0;
+  --bg:#141415; --card:#1d1d1f; --fg:#e8e8e6; --muted:#a3a3ab;
+  --line:#2e2e31; --accent:#6b9bff; --ok:#3fb950; --bad:#f85149; --skip:#9a9aa0;
 }
+[data-density="roomy"] td,[data-density="roomy"] th{padding:.6em .7em;font-size:14px}
+[data-density="roomy"] .card{padding:1.3em}
 *{box-sizing:border-box}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-thumb{background:var(--line);border-radius:5px}
+*{scrollbar-width:thin;scrollbar-color:var(--line) transparent}
 body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);margin:0}
 header{display:flex;align-items:center;gap:.8em;padding:.7em 1.2em;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0}
 header h1{font-size:1.1em;margin:0 auto 0 0}
 .badge{font-size:.8em;padding:.15em .6em;border-radius:2em;border:1px solid var(--line);color:var(--muted)}
 .badge.ok{color:var(--ok);border-color:var(--ok)}
-.badge.bad{color:var(--bad);border-color:var(--bad)}
+.badge.bad{color:var(--bad);border-color:var(--bad);animation:pulse 1.6s infinite}
+@keyframes pulse{50%{opacity:.45}}
 button{font:inherit;padding:.35em .9em;border:1px solid var(--line);border-radius:.4em;background:var(--card);color:var(--fg);cursor:pointer}
 button:hover{border-color:var(--accent)}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.danger{border-color:var(--bad);color:var(--bad)}
+button.danger:hover{background:color-mix(in srgb, var(--bad) 12%, transparent)}
+details summary{cursor:pointer;color:var(--accent)}
+pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap;line-height:1.5}
 input,select,textarea{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:.4em;padding:.35em .6em}
 main{max-width:1020px;margin:0 auto;padding:1.2em}
 nav.tabs{display:flex;gap:.3em;margin-bottom:1em}
@@ -43,7 +53,6 @@ button:disabled:hover{border-color:var(--line)}
 canvas{width:100%;height:170px}
 #sched{width:100%;height:320px;font-family:var(--mono);font-size:13px}
 #diag{white-space:pre-wrap;font-family:var(--mono);font-size:12px;background:var(--bg);border:1px solid var(--line);border-radius:.4em;padding:.6em;margin-top:.6em;min-height:2.5em}
-pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
 .row{display:flex;gap:.6em;align-items:center;flex-wrap:wrap}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:1em}
 @media(max-width:700px){.grid2{grid-template-columns:1fr}}
@@ -53,6 +62,7 @@ pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
   <h1>cyclo-agent</h1>
   <span id="health" class="badge">…</span>
   <button id="theme" onclick="toggleTheme()" title="тема">◐</button>
+  <button id="density" onclick="toggleDensity()" title="плотность">плотно</button>
 </header>
 <main>
 <div id="auth"></div>
@@ -103,7 +113,7 @@ pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
       <div class="row" style="margin-bottom:.6em">
         <label class="muted">файл <select id="efile" onchange="loadFile()"></select></label>
         <button onclick="newFile()">Новый</button>
-        <button onclick="delFile()">Удалить</button>
+        <button class="danger" onclick="delFile()">Удалить</button>
         <input id="impurl" placeholder="https://…/*.cyclo" style="width:22em">
         <button onclick="importUrl()" title="скачать браузером и вставить в редактор">Вставить по URL</button>
       </div>
@@ -166,6 +176,9 @@ pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
 let cur = 'events', sched0 = '';
 function themeInit(){ document.documentElement.dataset.theme = localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); }
 function toggleTheme(){ const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = t; localStorage.setItem('theme', t); }
+function densityInit(){ document.documentElement.dataset.density = localStorage.getItem('density') || 'compact'; densityLabel(); }
+function toggleDensity(){ const d = document.documentElement.dataset.density === 'roomy' ? 'compact' : 'roomy'; document.documentElement.dataset.density = d; localStorage.setItem('density', d); densityLabel(); }
+function densityLabel(){ document.getElementById('density').textContent = document.documentElement.dataset.density === 'roomy' ? 'свободно' : 'плотно'; }
 function tab(n){ cur = n; for (const t of ['events','dash','editor','settings']){ document.getElementById('v-'+t).hidden = t !== n; document.getElementById('t-'+t).classList.toggle('on', t === n); } if (n === 'events'){ loadRuns(); loadNext(); } if (n === 'dash'){ loadDash(); } if (n === 'editor'){ loadSched(); } if (n === 'settings'){ loadCfg(); } }
 const j = (m,u,b)=>fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
 async function refresh(){
@@ -363,14 +376,26 @@ async function loadDash(force){
 }
 function srcName(c){ return c.tag ? 'тег '+c.tag : c.job ? 'задача '+c.job : c.kind ? 'тип '+c.kind : 'всё'; }
 function drawChart(cv, pts, type, metric){
-  const ctx = cv.getContext('2d'), dark = document.documentElement.dataset.theme === 'dark';
-  ctx.clearRect(0,0,cv.width,cv.height);
+  // Чёткость: рисуем в пикселях экрана, координаты — логические 940×170.
+  const VW = 940, VH = 170, dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(VW * dpr); cv.height = Math.round(VH * dpr);
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const dark = document.documentElement.dataset.theme === 'dark';
+  // Цвета — из переменных темы (hex-фолбэки на случай отсутствия CSS).
+  const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const C = {
+    muted: cssv('--muted') || (dark ? '#a3a3ab' : '#6b6b70'),
+    line: cssv('--line') || (dark ? '#2e2e31' : '#dddcd8'),
+    accent: cssv('--accent') || (dark ? '#6b9bff' : '#2f6fed'),
+  };
+  ctx.clearRect(0,0,VW,VH);
   const vs = pts.filter(p=>p.v !== null && p.v !== undefined).map(p=>p.v);
-  ctx.fillStyle = dark ? '#9a9aa0' : '#6b6b70';
+  ctx.fillStyle = C.muted;
   ctx.font = '11px system-ui,sans-serif';
   ctx.fillText(metric || '', 44, 12);
-  const L = 44, B = 16, W = cv.width - L - 6, H = cv.height - B - 18;
-  ctx.strokeStyle = dark ? '#333336' : '#dddcd8'; ctx.beginPath();
+  const L = 44, B = 16, W = VW - L - 6, H = VH - B - 18;
+  ctx.strokeStyle = C.line; ctx.beginPath();
   ctx.moveTo(L, 16); ctx.lineTo(L, 16+H); ctx.lineTo(L+W, 16+H); ctx.stroke();
   if (!vs.length){ ctx.fillText('нет данных', L + 8, 16 + H/2); return; }
   const mn = Math.min(...vs), mx = Math.max(...vs), span = (mx - mn) || 1;
@@ -380,9 +405,9 @@ function drawChart(cv, pts, type, metric){
   const ticks = Math.min(4, pts.length - 1);
   for (let k = 0; k <= ticks; k++){
     const i = Math.round(k/ticks*(pts.length-1));
-    if (pts[i] && pts[i].t) ctx.fillText(new Date(pts[i].t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}), X(i)-14, cv.height-2);
+    if (pts[i] && pts[i].t) ctx.fillText(new Date(pts[i].t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}), X(i)-14, VH-2);
   }
-  const col = dark ? '#6b9bff' : '#2f6fed';
+  const col = C.accent;
   ctx.strokeStyle = col; ctx.fillStyle = col;
   if (type === 'dots'){ for (const [i,p] of pts.entries()){ if (p.v === null || p.v === undefined) continue; ctx.beginPath(); ctx.arc(X(i), Y(p.v), 2.5, 0, 7); ctx.fill(); } return; }
   if (type === 'bars'){ const w = Math.max(1, W/pts.length - 1); for (const [i,p] of pts.entries()){ if (p.v === null || p.v === undefined) continue; const y = Y(p.v); ctx.fillRect(X(i), y, w, 16+H-y); } return; }
@@ -468,5 +493,5 @@ async function dashSave(){
   document.getElementById('dashmsg').textContent = r.ok ? 'Сохранено' : await r.text();
   if (r.ok){ dashClean(); loadDash(true); }
 }
-themeInit(); refresh(); setInterval(()=>{ if (document.getElementById('app').hidden) return; if (cur === 'events') refresh(); else if (cur === 'dash') loadDash(); }, 30000);
+themeInit(); densityInit(); refresh(); setInterval(()=>{ if (document.getElementById('app').hidden) return; if (cur === 'events') refresh(); else if (cur === 'dash') loadDash(); }, 30000);
 </script></body></html>
