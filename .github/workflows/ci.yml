@@ -28,18 +28,31 @@ jobs:
         include:
           # ПК
           - target: x86_64-unknown-linux-musl
+            name: pc-x86_64-musl
             image: ghcr.io/cross-rs/x86_64-unknown-linux-musl:main
           - target: aarch64-unknown-linux-musl
+            name: pc-aarch64-musl
             image: ghcr.io/cross-rs/aarch64-unknown-linux-musl:main
           # Роутеры (OpenWrt): arm/arm64/mips
           - target: armv7-unknown-linux-musleabihf
+            name: router-armv7-musl
             image: ghcr.io/cross-rs/armv7-unknown-linux-musleabihf:main
           - target: aarch64-unknown-linux-musl
+            name: router-aarch64-musl
             image: ghcr.io/cross-rs/aarch64-unknown-linux-musl:main
           - target: mipsel-unknown-linux-musl
+            name: router-mipsel-musl
             image: ghcr.io/cross-rs/mipsel-unknown-linux-musl:main
           - target: mips-unknown-linux-musl
+            name: router-mips-musl
             image: ghcr.io/cross-rs/mips-unknown-linux-musl:main
+          # Телефоны (Android/Termux): arm64 + старый 32-битный arm
+          - target: aarch64-linux-android
+            name: phone-aarch64-android
+            image: ghcr.io/cross-rs/aarch64-linux-android:main
+          - target: armv7-linux-androideabi
+            name: phone-armv7-android
+            image: ghcr.io/cross-rs/arm-linux-androideabi:main
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,5 +66,5 @@ jobs:
           CROSS_CONTAINER_ENGINE: docker
       - uses: actions/upload-artifact@v4
         with:
-          name: cyclo-agent-${{ matrix.target }}
+          name: cyclo-agent-${{ matrix.name }}
           path: target/${{ matrix.target }}/release/cyclo-agent

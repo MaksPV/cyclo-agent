@@ -166,7 +166,8 @@ systemd: `User=cyclo-agent Restart=always`, наружу — через reverse-
 ## Сборки
 
 CI собирает статические musl-бинари: ПК (`x86_64`, `aarch64`), роутеры
-(`armv7`, `aarch64`, `mipsel`, `mips`) — артефакты в прогоне workflow.
+(`armv7`, `aarch64`, `mipsel`, `mips`), телефоны Android/Termux (`aarch64`,
+`armv7`) — артефакты в прогоне workflow.
 
 ## Лицензия
 
