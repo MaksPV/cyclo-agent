@@ -106,27 +106,16 @@ pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
   меняется в Настройках). Остальные .cyclo рядом — модули для use,
   schedule-блок в них запрещён (иначе schedule-in-import).
 
-2. Исполняется только строка с cmd/check в action_attrs:
-  3h: RUN({"cmd": "/bin/echo", "args": ["backup"], "tags": ["backup"], "timeout_s": 1800});
+2. Что исполняется. Задача — это JSON в строке fire:
+  0m: JOB.fire() {"cmd": "/bin/echo", "args": ["backup"], "tags": ["backup"], "timeout_s": 1800};
+  Этот JSON становится action_attrs события.
 
 3. Виды задач (циклы-обёртки делить по видам: блок вычисляет
   все поля сразу, чужое поле — unknown-field):
   exec: {"cmd": ..., "args": [...]}
   http: {"check": "http", "url": ..., "expect": 200, "contains": "ok"}
   tcp:  {"check": "tcp", "host": ..., "port": ...}
-  общее: "tags": ["web"], "timeout_s": 10.
-
-4. Периодика: repeat N — ровно N стыков; fill — до конца родителя:
-  0h: fill HOURLY(...);  [workday(at)] 8h: repeat 11 HOURLY(...);
-
-5. Условия в [] — предикаты языка и свои из библиотек:
-  use "libs/x.cyclo" (путь от директории импортирующего файла).
-
-6. Время наивное = UTC. Опоздание &gt;60с не исполняется (skipped).
-  Точность срабатывания — миллисекунды (started_at − scheduled_at в runs).
-
-7. Полные примеры: examples/schedule.cyclo (стартер),
-  examples/demo.cyclo, examples/checks.cyclo, examples/full.cyclo.</pre></details>
+  общее: "tags": ["web"], "timeout_s": 10.</pre></details>
     </div>
   </section>
 
@@ -214,13 +203,7 @@ async function loadRuns(){
   let runs = await fetch(`/api/runs?from=${from}&to=${to}&limit=200`).then(r=>r.json());
   if (f) runs = runs.filter(r=>r.status === f);
   document.getElementById('runs').innerHTML = runs.map(r=>`<tr><td>${new Date(r.scheduled_at).toLocaleString()}</td><td>${r.kind}</td><td>${esc(r.cmd)}</td><td>${esc((JSON.parse(r.tags||'[]')).join(','))}</td><td class="${r.status}">${r.status}</td><td>${r.exit_code ?? ''}</td><td>${r.latency_ms}</td><td class="muted">${esc((r.err_tail||'').slice(0,100))}</td></tr>`).join('');
-  const cv = document.getElementById('graph'), ctx = cv.getContext('2d');
-  const dark = document.documentElement.dataset.theme === 'dark';
-  ctx.clearRect(0,0,cv.width,cv.height);
-  const pts = runs.slice().reverse(), max = Math.max(1,...pts.map(r=>r.latency_ms));
-  ctx.strokeStyle = dark ? '#6b9bff' : '#2f6fed'; ctx.beginPath();
-  pts.forEach((r,i)=>{ const x = pts.length < 2 ? 0 : i/(pts.length-1)*cv.width, y = cv.height-8-(r.latency_ms/max)*(cv.height-16); i ? ctx.lineTo(x,y) : ctx.moveTo(x,y); });
-  ctx.stroke();
+  drawChart(document.getElementById('graph'), runs.slice().reverse().map(r=>({t: r.scheduled_at, v: r.latency_ms})), 'line', 'latency_ms');
 }
 async function loadNext(){
   const nx = await fetch('/api/next?n=20').then(r=>r.json());
@@ -327,25 +310,39 @@ async function loadDash(){
     const q = new URLSearchParams({metric:c.metric, agg:c.agg||'avg', to, from: to - (c.window_secs||86400)*1000, bucket_secs: c.bucket_secs||300});
     if (c.tag) q.set('tag', c.tag); if (c.job) q.set('job', c.job); if (c.kind) q.set('kind', c.kind);
     const s = await fetch('/api/series?'+q).then(r=>r.json());
-    drawChart(card.querySelector('canvas'), s.points||[], c.type||'line');
+    drawChart(card.querySelector('canvas'), s.points||[], c.type||'line', c.metric);
   }
 }
 function srcName(c){ return c.tag ? 'тег '+c.tag : c.job ? 'джоба '+c.job : c.kind ? 'вид '+c.kind : 'всё'; }
-function drawChart(cv, pts, type){
+function drawChart(cv, pts, type, metric){
   const ctx = cv.getContext('2d'), dark = document.documentElement.dataset.theme === 'dark';
   ctx.clearRect(0,0,cv.width,cv.height);
   const vs = pts.filter(p=>p.v !== null && p.v !== undefined).map(p=>p.v);
-  if (!vs.length){ ctx.fillStyle = dark ? '#9a9aa0' : '#6b6b70'; ctx.fillText('нет данных', 10, 20); return; }
+  ctx.fillStyle = dark ? '#9a9aa0' : '#6b6b70';
+  ctx.font = '11px system-ui,sans-serif';
+  ctx.fillText(metric || '', 44, 12);
+  if (!vs.length){ ctx.fillText('нет данных', 44, 30); return; }
+  const L = 44, B = 16, W = cv.width - L - 6, H = cv.height - B - 18;
   const mn = Math.min(...vs), mx = Math.max(...vs), span = (mx - mn) || 1;
-  const X = i => pts.length < 2 ? 0 : i/(pts.length-1)*cv.width;
-  const Y = v => cv.height-10-((v-mn)/span)*(cv.height-20);
-  ctx.strokeStyle = dark ? '#6b9bff' : '#2f6fed'; ctx.fillStyle = ctx.strokeStyle;
+  const X = i => pts.length < 2 ? L : L + i/(pts.length-1)*W;
+  const Y = v => 16 + H - ((v-mn)/span)*H;
+  ctx.strokeStyle = dark ? '#333336' : '#dddcd8'; ctx.beginPath();
+  ctx.moveTo(L, 16); ctx.lineTo(L, 16+H); ctx.lineTo(L+W, 16+H); ctx.stroke();
+  ctx.fillText(fmtN(mx), 2, 24); ctx.fillText(fmtN(mn), 2, 16+H);
+  const ticks = Math.min(4, pts.length - 1);
+  for (let k = 0; k <= ticks; k++){
+    const i = Math.round(k/ticks*(pts.length-1));
+    if (pts[i] && pts[i].t) ctx.fillText(new Date(pts[i].t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}), X(i)-14, cv.height-2);
+  }
+  const col = dark ? '#6b9bff' : '#2f6fed';
+  ctx.strokeStyle = col; ctx.fillStyle = col;
   if (type === 'dots'){ for (const [i,p] of pts.entries()){ if (p.v === null || p.v === undefined) continue; ctx.beginPath(); ctx.arc(X(i), Y(p.v), 2.5, 0, 7); ctx.fill(); } return; }
-  if (type === 'bars'){ const w = Math.max(1, cv.width/pts.length - 1); for (const [i,p] of pts.entries()){ if (p.v === null || p.v === undefined) continue; const y = Y(p.v); ctx.fillRect(X(i), y, w, cv.height-10-y); } return; }
+  if (type === 'bars'){ const w = Math.max(1, W/pts.length - 1); for (const [i,p] of pts.entries()){ if (p.v === null || p.v === undefined) continue; const y = Y(p.v); ctx.fillRect(X(i), y, w, 16+H-y); } return; }
   ctx.beginPath(); let pen = false;
   pts.forEach((p,i)=>{ if (p.v === null || p.v === undefined){ pen = false; return; } const x = X(i), y = Y(p.v); pen ? ctx.lineTo(x,y) : ctx.moveTo(x,y); pen = true; });
   ctx.stroke();
 }
+function fmtN(v){ return Math.abs(v) >= 100 ? Math.round(v).toString() : (Math.round(v*100)/100).toString(); }
 function dashMark(){ document.getElementById('dashdirty').hidden = false; document.getElementById('t-dash').textContent = 'Дашборд •'; }
 function dashClean(){ document.getElementById('dashdirty').hidden = true; document.getElementById('t-dash').textContent = 'Дашборд'; }
 function sel(opts, val, extra){ return `<select ${extra||''}>` + opts.map(o=>`<option ${o===val?'selected':''}>${esc(o)}</option>`).join('') + `</select>`; }
