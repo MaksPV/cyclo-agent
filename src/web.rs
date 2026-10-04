@@ -228,6 +228,8 @@ struct RunsQuery {
     from: Option<i64>,
     to: Option<i64>,
     limit: Option<i64>,
+    offset: Option<i64>,
+    status: Option<String>,
 }
 
 async fn runs(
@@ -241,13 +243,20 @@ async fn runs(
     let now = now_ms();
     let to = q.to.unwrap_or(now);
     let from = q.from.unwrap_or(now - 24 * 3_600_000);
-    Json(
-        serde_json::to_value(
-            app.store
-                .list_runs(from, to, q.limit.unwrap_or(200).clamp(1, 1000)),
-        )
-        .unwrap(),
-    )
+    // Статус — строгий список, иначе 400 (фильтр на сервере, страницы честные).
+    let status = match q.status.as_deref().unwrap_or("") {
+        "" => None,
+        s @ ("ok" | "fail" | "timeout" | "skipped") => Some(s),
+        other => {
+            return (StatusCode::BAD_REQUEST, format!("bad status '{other}'")).into_response();
+        }
+    };
+    let limit = q.limit.unwrap_or(100).clamp(1, 1000);
+    let offset = q.offset.unwrap_or(0).max(0);
+    Json(serde_json::json!({
+        "runs": serde_json::to_value(app.store.list_runs(from, to, limit, offset, status)).unwrap(),
+        "total": app.store.count_runs(from, to, status),
+    }))
     .into_response()
 }
 

@@ -200,17 +200,31 @@ impl Store {
             .unwrap_or(false)
     }
 
-    pub fn list_runs(&self, from: i64, to: i64, limit: i64) -> Vec<Run> {
+    pub fn list_runs(
+        &self,
+        from: i64,
+        to: i64,
+        limit: i64,
+        offset: i64,
+        status: Option<&str>,
+    ) -> Vec<Run> {
         let conn = self.lock();
-        let mut st = match conn.prepare(
+        let sql = if status.is_some() {
             "SELECT id, job_key, scheduled_at, started_at, finished_at, status,
              kind, tags, cmd, args, exit_code, latency_ms, out_tail, err_tail, result
-             FROM runs WHERE scheduled_at>=? AND scheduled_at<? ORDER BY scheduled_at DESC LIMIT ?",
-        ) {
+             FROM runs WHERE scheduled_at>=? AND scheduled_at<? AND status=?
+             ORDER BY scheduled_at DESC LIMIT ? OFFSET ?"
+        } else {
+            "SELECT id, job_key, scheduled_at, started_at, finished_at, status,
+             kind, tags, cmd, args, exit_code, latency_ms, out_tail, err_tail, result
+             FROM runs WHERE scheduled_at>=? AND scheduled_at<?
+             ORDER BY scheduled_at DESC LIMIT ? OFFSET ?"
+        };
+        let mut st = match conn.prepare(sql) {
             Ok(s) => s,
             Err(_) => return vec![],
         };
-        st.query_map(params![from, to, limit.clamp(1, 100_000)], |r| {
+        let row = |r: &rusqlite::Row| {
             Ok(Run {
                 id: r.get(0)?,
                 job_key: r.get(1)?,
@@ -228,9 +242,41 @@ impl Store {
                 err_tail: r.get(13)?,
                 result: r.get(14)?,
             })
-        })
-        .map(|it| it.filter_map(|x| x.ok()).collect())
-        .unwrap_or_default()
+        };
+        let mapped = if let Some(st_) = status {
+            st.query_map(
+                params![from, to, st_, limit.clamp(1, 100_000), offset.max(0)],
+                row,
+            )
+        } else {
+            st.query_map(
+                params![from, to, limit.clamp(1, 100_000), offset.max(0)],
+                row,
+            )
+        };
+        mapped
+            .map(|it| it.filter_map(|x| x.ok()).collect())
+            .unwrap_or_default()
+    }
+
+    /// Сколько событий в окне (для пагинации; тот же фильтр, что у list_runs).
+    pub fn count_runs(&self, from: i64, to: i64, status: Option<&str>) -> i64 {
+        let conn = self.lock();
+        let sql = if status.is_some() {
+            "SELECT COUNT(*) FROM runs WHERE scheduled_at>=? AND scheduled_at<? AND status=?"
+        } else {
+            "SELECT COUNT(*) FROM runs WHERE scheduled_at>=? AND scheduled_at<?"
+        };
+        let mut st = match conn.prepare(sql) {
+            Ok(s) => s,
+            Err(_) => return 0,
+        };
+        let v: rusqlite::Result<i64> = if let Some(st_) = status {
+            st.query_row(params![from, to, st_], |r| r.get(0))
+        } else {
+            st.query_row(params![from, to], |r| r.get(0))
+        };
+        v.unwrap_or(0)
     }
 
     pub fn prune_count(&self, max_rows: u64) {
@@ -250,6 +296,6 @@ impl Store {
 
     /// Точки для серий: всё окно разом (лимит 100k), фильтры — в вызывателе.
     pub fn series_points(&self, from: i64, to: i64) -> Vec<Run> {
-        self.list_runs(from, to, 100_000)
+        self.list_runs(from, to, 100_000, 0, None)
     }
 }

@@ -61,9 +61,15 @@ pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
     <div class="card"><h2>Задержка выполнений, мс</h2><canvas id="graph" width="940" height="170"></canvas></div>
     <div class="card"><h2>Последние запуски</h2>
       <div class="row" style="margin-bottom:.5em">
-        <label class="muted">статус <select id="flt" onchange="loadRuns()"><option value="">все</option><option>ok</option><option>fail</option><option>timeout</option><option>skipped</option></select></label>
+        <label class="muted">статус <select id="flt" onchange="runPage=0;loadRuns()"><option value="">все</option><option>ok</option><option>fail</option><option>timeout</option><option>skipped</option></select></label>
+        <label class="muted">по <select id="rsize" onchange="runPage=0;loadRuns()"><option>50</option><option selected>100</option><option>200</option></select></label>
       </div>
       <table><thead><tr><th>план</th><th>тип</th><th>cmd</th><th>теги</th><th>статус</th><th>exit</th><th>мс</th><th>stderr</th></tr></thead><tbody id="runs"></tbody></table>
+      <div class="row" style="margin-top:.5em">
+        <button onclick="runNav(-1)">‹ назад</button>
+        <span id="rpage" class="muted"></span>
+        <button onclick="runNav(1)">вперёд ›</button>
+      </div>
     </div>
     <div class="card"><h2>Ближайшие</h2>
       <table><thead><tr><th>время</th><th>точка</th><th>cmd</th></tr></thead><tbody id="next"></tbody></table>
@@ -196,10 +202,24 @@ async function setup(){ const l=v('l'),p=v('p'),c=v('c');
 async function login(){ const r = await j('POST','/api/login',{login:v('l'),password:v('p')});
   if (!r.ok) alert(await r.text()); refresh(); }
 const v = id => document.getElementById(id).value;
+let runPage = 0, runTotal = 0;
+function runSize(){ return +document.getElementById('rsize').value || 100; }
+function runNav(d){
+  const pages = Math.max(1, Math.ceil(runTotal / runSize()));
+  runPage = Math.min(pages - 1, Math.max(0, runPage + d));
+  loadRuns();
+}
 async function loadRuns(){
   const to = Date.now(), from = to - 24*3600e3, f = document.getElementById('flt').value;
-  let runs = await fetch(`/api/runs?from=${from}&to=${to}&limit=200`).then(r=>r.json());
-  if (f) runs = runs.filter(r=>r.status === f);
+  const size = runSize();
+  const q = new URLSearchParams({from, to, limit: size, offset: runPage*size});
+  if (f) q.set('status', f);
+  const d = await fetch('/api/runs?'+q).then(r=>r.json());
+  const runs = d.runs || [];
+  runTotal = d.total || 0;
+  const pages = Math.max(1, Math.ceil(runTotal / size));
+  if (runPage > pages - 1){ runPage = pages - 1; return loadRuns(); }
+  document.getElementById('rpage').textContent = `стр. ${runPage+1} из ${pages} (всего ${runTotal})`;
   document.getElementById('runs').innerHTML = runs.map(r=>`<tr><td>${new Date(r.scheduled_at).toLocaleString()}</td><td>${r.kind}</td><td>${esc(r.cmd)}</td><td>${esc((JSON.parse(r.tags||'[]')).join(','))}</td><td class="${r.status}">${r.status}</td><td>${r.exit_code ?? ''}</td><td>${r.latency_ms}</td><td class="muted">${esc((r.err_tail||'').slice(0,100))}</td></tr>`).join('');
   drawChart(document.getElementById('graph'), runs.slice().reverse().map(r=>({t: r.scheduled_at, v: r.latency_ms})), 'line', 'latency_ms');
 }

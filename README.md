@@ -99,7 +99,9 @@ cycle TCPCHECK(task) duration = 1m {
 - `POST /api/login`, `POST /api/logout` (брутфорс: 5 попыток/мин с IP → 429)
 - `POST /api/password {current,new,confirm}` — смена пароля, чужие сессии закрываются
 - `GET /api/status` (анониму — только setup_required/authenticated), `GET /healthz`
-- `GET /api/runs?from&to&limit` (limit ≤ 1000), `GET /api/next?n≤500&within_secs≤30д`
+- `GET /api/runs?from&to&limit&offset&status` (limit ≤ 1000, статус из
+  ok|fail|timeout|skipped, иначе 400) — `{runs, total}` для пагинации,
+  `GET /api/next?n≤500&within_secs≤30д`
 - `GET /api/schedule`, `POST /api/schedule {content}` (валидация перед записью, ≤1МБ)
 - `POST /api/validate {content}` → `{ok | code,message}` (≤1МБ)
 - `GET /api/files` → `{main, files[]}` (.cyclo рядом с расписанием),
