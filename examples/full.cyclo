@@ -1,0 +1,42 @@
+// Полный пример: все фичи агента в одном файле.
+// use — библиотеки рядом с расписанием (путь от директории файла).
+use "libs/full_lib.cyclo";
+
+schedule "Full" {
+  point JOB {
+    actions = [fire];
+  }
+
+  // Цикл-обёртка на вид задачи: блок трогает только поля своей мапы
+  // (чужое поле — unknown-field в момент развёртки).
+  cycle EXEC(task) duration = 1m {
+    0m: JOB.fire() {"cmd": task.cmd, "args": task.args, "tags": task.tags, "timeout_s": task.timeout_s};
+  }
+
+  cycle HTTPCHECK(task) duration = 1m {
+    0m: JOB.fire() {"check": "http", "url": task.url, "expect": task.expect, "contains": task.contains, "tags": task.tags, "timeout_s": task.timeout_s};
+  }
+
+  cycle TCPCHECK(task) duration = 1m {
+    0m: JOB.fire() {"check": "tcp", "host": task.host, "port": task.port, "tags": task.tags, "timeout_s": task.timeout_s};
+  }
+
+  cycle HOURLY(task) duration = 1h {
+    0m: EXEC(task);
+  }
+
+  root_cycle start_time = "2026-01-01T00:00:00", duration = 24h {
+    // Константа из библиотеки: те же поля, что ждёт EXEC.
+    0h: fill HOURLY(PING);
+    // repeat N — ровно N стыков; fill — до конца родителя, считать не надо.
+    [workday(at)] 8h: repeat 11 HOURLY({"cmd": "/bin/echo", "args": ["cleanup"], "tags": ["cleanup"], "timeout_s": 10});
+    // Предикат из библиотеки + условие на день недели.
+    [business_hours(at)] 12h: HOURLY({"cmd": "/bin/echo", "args": ["lunch"], "tags": ["demo"], "timeout_s": 10});
+    [day_of_week(at) == 1] 9h30m: EXEC({"cmd": "/bin/echo", "args": ["report"], "tags": ["report"], "timeout_s": 10});
+    // Встроенные проверки: http ждёт код и подстроку, tcp — открытый порт.
+    0h: fill HTTPCHECK({"url": "http://127.0.0.1:18099/health", "expect": 200, "contains": "", "tags": ["web", "prod"], "timeout_s": 10});
+    0h: fill TCPCHECK({"host": "127.0.0.1", "port": 18098, "tags": ["db", "prod"], "timeout_s": 10});
+    // Неминуемый fail для красной строки в дашборде.
+    3h: EXEC({"cmd": "/bin/false", "args": [], "tags": ["demo-fail"], "timeout_s": 10});
+  }
+}

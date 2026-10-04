@@ -1,0 +1,4 @@
+// Общая библиотека: только объявления, schedule-блок здесь запрещён
+// (иначе валидация ответит schedule-in-import).
+pred business_hours(at) = hour(at) >= 9 and hour(at) < 18;
+const PING = {"cmd": "/bin/echo", "args": ["ping"], "tags": ["ping"], "timeout_s": 10};

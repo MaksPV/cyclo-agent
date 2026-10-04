@@ -63,6 +63,12 @@ pub fn router(app: App) -> axum::Router {
         .route("/api/series", axum::routing::get(series))
         .route("/api/meta", axum::routing::get(meta))
         .route(
+            "/api/files",
+            axum::routing::get(get_file)
+                .post(save_file)
+                .delete(delete_file),
+        )
+        .route(
             "/api/dashboards",
             axum::routing::get(get_dashboards).post(save_dashboards),
         )
@@ -326,6 +332,173 @@ fn metric_value(run: &crate::store::Run, metric: &str) -> Option<f64> {
 
 fn tags_of(run: &crate::store::Run) -> Vec<String> {
     serde_json::from_str(&run.tags).unwrap_or_default()
+}
+
+/// Корень файлов расписания: директория главного файла.
+fn files_base(app: &App) -> std::path::PathBuf {
+    app.cfg
+        .schedule
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+}
+
+/// Относительный путь внутри базы без escapes: только .cyclo, без .. и абсолютных.
+fn clean_rel(raw: &str) -> Result<std::path::PathBuf, String> {
+    if raw.is_empty() || raw.len() > 512 {
+        return Err("bad path".to_owned());
+    }
+    let p = std::path::PathBuf::from(raw);
+    if p.is_absolute() {
+        return Err("absolute path not allowed".to_owned());
+    }
+    if p.components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(".. not allowed".to_owned());
+    }
+    if p.extension().and_then(|e| e.to_str()) != Some("cyclo") {
+        return Err("only .cyclo files".to_owned());
+    }
+    Ok(p)
+}
+
+#[derive(serde::Deserialize)]
+struct FileQuery {
+    path: Option<String>,
+}
+
+/// GET /api/files → {main, files[]} | ?path=rel → {path, content}.
+async fn get_file(
+    State(app): State<App>,
+    cookies: Cookies,
+    Query(q): Query<FileQuery>,
+) -> impl IntoResponse {
+    if authed(&cookies, &app).is_none() {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let base = files_base(&app);
+    if let Some(rel) = q.path {
+        let p = match clean_rel(&rel) {
+            Ok(p) => base.join(p),
+            Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
+        };
+        return match std::fs::read_to_string(&p) {
+            Ok(t) => Json(serde_json::json!({"path": rel, "content": t})).into_response(),
+            Err(e) => (StatusCode::NOT_FOUND, e.to_string()).into_response(),
+        };
+    }
+    let mut out = vec![];
+    let mut stack = vec![base.clone()];
+    while let Some(dir) = stack.pop() {
+        let rd = match std::fs::read_dir(&dir) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        for e in rd.flatten() {
+            let path = e.path();
+            if path.is_dir() {
+                if out.len() < 500 {
+                    stack.push(path);
+                }
+                continue;
+            }
+            if path.extension().and_then(|x| x.to_str()) != Some("cyclo") {
+                continue;
+            }
+            if let Ok(rel) = path.strip_prefix(&base) {
+                if out.len() < 500 {
+                    out.push(rel.to_string_lossy().replace('\\', "/"));
+                }
+            }
+        }
+        if out.len() >= 500 {
+            break;
+        }
+    }
+    out.sort();
+    let main = app
+        .cfg
+        .schedule
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    Json(serde_json::json!({"main": main, "files": out})).into_response()
+}
+
+#[derive(serde::Deserialize)]
+struct FileBody {
+    path: String,
+    content: String,
+}
+
+/// POST /api/files — сохранить (новый или существующий) файл в базе расписания.
+async fn save_file(
+    State(app): State<App>,
+    cookies: Cookies,
+    Json(b): Json<FileBody>,
+) -> impl IntoResponse {
+    if authed(&cookies, &app).is_none() {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    if b.content.len() > MAX_SCHEDULE_BYTES {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "too large (max 1MB)".to_owned(),
+        )
+            .into_response();
+    }
+    let rel = match clean_rel(&b.path) {
+        Ok(p) => p,
+        Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
+    };
+    let dest = files_base(&app).join(&rel);
+    if let Some(dir) = dest.parent() {
+        if !dir.as_os_str().is_empty() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+    }
+    match std::fs::write(&dest, &b.content) {
+        Ok(()) => Json(serde_json::json!({"path": rel.to_string_lossy()})).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// DELETE /api/files?path= — удалить файл (главный файл расписания — нельзя).
+async fn delete_file(
+    State(app): State<App>,
+    cookies: Cookies,
+    Query(q): Query<FileQuery>,
+) -> impl IntoResponse {
+    if authed(&cookies, &app).is_none() {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let Some(rel) = q.path else {
+        return (StatusCode::BAD_REQUEST, "need ?path=".to_owned()).into_response();
+    };
+    let p = match clean_rel(&rel) {
+        Ok(p) => p,
+        Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
+    };
+    let dest = files_base(&app).join(&p);
+    if same_file(&dest, &app.cfg.schedule) {
+        return (
+            StatusCode::FORBIDDEN,
+            "cannot delete main schedule".to_owned(),
+        )
+            .into_response();
+    }
+    match std::fs::remove_file(&dest) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::NOT_FOUND, e.to_string()).into_response(),
+    }
+}
+
+fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => a == b,
+    }
 }
 
 /// Что реально есть в БД: для выпадающих списков конструктора.

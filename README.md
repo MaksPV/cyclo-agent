@@ -95,6 +95,10 @@ cycle TCPCHECK(task) duration = 1m {
 - `GET /api/runs?from&to&limit` (limit ≤ 1000), `GET /api/next?n≤500&within_secs≤30д`
 - `GET /api/schedule`, `POST /api/schedule {content}` (валидация перед записью, ≤1МБ)
 - `POST /api/validate {content}` → `{ok | code,message}` (≤1МБ)
+- `GET /api/files` → `{main, files[]}` (.cyclo рядом с расписанием),
+  `GET /api/files?path=` → `{path, content}`, `POST /api/files {path, content}`
+  (≤1МБ, только `.cyclo` без `..`), `DELETE /api/files?path=` (главный нельзя).
+  Проверка — всегда по главному файлу (use резолвится с диска).
 - `GET /api/series?tag&job&kind&metric&agg&from&to&bucket_secs` — побакетные
   точки `{t, v|null}`; метрика — `latency_ms`, `up` (1/0 из статуса),
   `exit_code` или числовой путь в `result` (`result.status_code`, ...);

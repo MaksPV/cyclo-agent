@@ -86,26 +86,46 @@ pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
 
   <section id="v-editor" hidden>
     <div class="card"><h2>Расписание</h2>
+      <div class="row" style="margin-bottom:.6em">
+        <label class="muted">файл <select id="efile" onchange="loadFile()"></select></label>
+        <button onclick="newFile()">Новый</button>
+        <button onclick="delFile()">Удалить</button>
+        <input id="impurl" placeholder="https://…/*.cyclo" style="width:22em">
+        <button onclick="importUrl()" title="скачать браузером и вставить в редактор">Вставить по URL</button>
+      </div>
       <textarea id="sched" spellcheck="false"></textarea>
       <div class="row" style="margin-top:.6em">
         <button onclick="doValidate()">Проверить</button>
         <button class="primary" onclick="doSave()">Сохранить</button>
       </div>
       <div id="diag"></div>
-      <details><summary>Шпаргалка синтаксиса</summary><pre class="cheat">schedule "Имя" {
+      <details><summary>Туториал: как писать код</summary><pre class="cheat">1. Скелет: точка (куда), цикл (кусок времени), корень (сутки).
   point JOB { actions = [fire]; }
-  cycle RUN(job) duration = 1m {
-    0m: JOB.fire() {"cmd": job.cmd, "args": job.args, "timeout_s": job.timeout_s};
-  }
-  root_cycle start_time = "2026-01-01T00:00:00", duration = 24h {
-    0h: fill RUN({"cmd": "/opt/jobs/ping.sh", "args": [], "timeout_s": 60});
-    3h: RUN({"cmd": "/usr/local/bin/backup.sh", "args": ["--incremental"], "timeout_s": 1800});
-    [workday(at)] 8h: repeat 11 RUN({"cmd": "/opt/jobs/clean.sh", "args": [], "timeout_s": 600});
-    [day_of_week(at) == 1] 9h30m: RUN({"cmd": "/opt/jobs/report.sh", "args": [], "timeout_s": 900});
-  }
-}
-Длительности: ms s m h d w. Агент исполняет строки с "cmd".
-Ошибки покажет «Проверить» (код + текст как в CLI).</pre></details>
+  cycle RUN(job) duration = 1m { 0m: JOB.fire() {...}; }
+  root_cycle start_time = "2026-01-01T00:00:00", duration = 24h { ... }
+
+2. Строка корня = запуск. Агент исполняет только строки с cmd/check:
+  3h: RUN({"cmd": "/bin/echo", "args": ["backup"], "tags": ["backup"], "timeout_s": 1800});
+
+3. Виды задач (циклы-обёртки делить по видам: блок вычисляет
+  все поля сразу, чужое поле — unknown-field):
+  exec: {"cmd": ..., "args": [...]}
+  http: {"check": "http", "url": ..., "expect": 200, "contains": "ok"}
+  tcp:  {"check": "tcp", "host": ..., "port": ...}
+  общее: "tags": ["web"], "timeout_s": 10.
+
+4. Повторы: repeat N — ровно N стыков; fill — до конца родителя:
+  0h: fill HOURLY(...);  [workday(at)] 8h: repeat 11 HOURLY(...);
+
+5. Условия в []: workday(at), day_of_week(at) == 1, свои предикаты:
+  pred business_hours(at) = hour(at) &gt;= 9 and hour(at) &lt; 18;
+
+6. Библиотеки: use "libs/x.cyclo" (путь от директории файла);
+  в либе только pred/const/таблицы, schedule-блок запрещён
+  (иначе schedule-in-import). Чужой файл по URL — кнопкой
+  «Вставить по URL» (качает браузер, дальше выбрать файл и сохранить).
+
+7. Длительности: ms s m h d w. Полный живой пример — examples/full.cyclo.</pre></details>
     </div>
   </section>
 
@@ -172,22 +192,79 @@ async function loadNext(){
   const nx = await fetch('/api/next?n=20').then(r=>r.json());
   document.getElementById('next').innerHTML = (nx.events||[]).map(e=>`<tr><td>${new Date(e.time).toLocaleString()}</td><td>${e.point}.${e.action}</td><td>${esc(e.cmd)}</td></tr>`).join('');
 }
-async function loadSched(){
+let curFile = '';
+async function loadSched(){ await refreshFiles(); }
+async function refreshFiles(){
+  const d = await fetch('/api/files').then(r=>r.json());
+  const sel = document.getElementById('efile');
+  sel.innerHTML = (d.files||[]).map(f=>`<option>${esc(f)}</option>`).join('');
+  if (!curFile) curFile = (d.files||[]).find(f=>f.endsWith(d.main)) || (d.files||[])[0] || '';
+  sel.value = curFile;
   const ta = document.getElementById('sched');
-  if (ta.dataset.loaded) return;
-  ta.value = (await fetch('/api/schedule').then(r=>r.json())).content || '';
-  sched0 = ta.value; ta.dataset.loaded = '1';
   ta.oninput = () => { document.getElementById('dirty').hidden = ta.value === sched0; };
+  await loadFile();
+}
+async function loadFile(){
+  const ta = document.getElementById('sched');
+  curFile = document.getElementById('efile').value;
+  if (!curFile){ ta.value = ''; return; }
+  const d = await fetch('/api/files?path='+encodeURIComponent(curFile)).then(r=>r.json());
+  ta.value = d.content || ''; sched0 = ta.value;
+  document.getElementById('dirty').hidden = true;
+  document.getElementById('diag').textContent = '';
+}
+function newFile(){
+  const p = prompt('Путь нового файла (например libs/holidays.cyclo):', 'libs/new.cyclo');
+  if (!p) return;
+  curFile = p;
+  const sel = document.getElementById('efile');
+  if (![...sel.options].some(o=>o.value === p)){ sel.add(new Option(p, p)); }
+  sel.value = p;
+  document.getElementById('sched').value = '// библиотека: только pred/const/таблицы, без schedule-блока\n';
+  sched0 = '';
+  document.getElementById('dirty').hidden = false;
+}
+async function delFile(){
+  if (!curFile || !confirm('Удалить ' + curFile + '?')) return;
+  const r = await fetch('/api/files?path='+encodeURIComponent(curFile), {method:'DELETE'});
+  document.getElementById('diag').textContent = r.ok ? 'Удалён' : await r.text();
+  if (r.ok){ curFile = ''; await refreshFiles(); }
+}
+async function importUrl(){
+  const u = document.getElementById('impurl').value.trim();
+  if (!u) return;
+  try {
+    // Качает браузер: сервер файл не трогает (нет SSRF), CORS чужого хоста — на совести хоста.
+    const t = await fetch(u).then(r=>{ if (!r.ok) throw new Error('HTTP '+r.status); return r.text(); });
+    if (t.length > 1000000) throw new Error('слишком большой');
+    document.getElementById('sched').value = t;
+    document.getElementById('dirty').hidden = document.getElementById('sched').value === sched0;
+    document.getElementById('diag').textContent = 'Вставлено по URL — выберите файл и сохраните.';
+  } catch(e){ document.getElementById('diag').textContent = 'Не скачалось: ' + e.message; }
+}
+async function mainContent(){
+  const d = await fetch('/api/files').then(r=>r.json());
+  const main = (d.files||[]).find(f=>f.endsWith(d.main)) || (d.files||[])[0] || '';
+  if (!main) return '';
+  return (await fetch('/api/files?path='+encodeURIComponent(main)).then(r=>r.json())).content || '';
 }
 async function doValidate(){
-  const r = await j('POST','/api/validate',{content:document.getElementById('sched').value}).then(r=>r.json());
-  document.getElementById('diag').textContent = r.ok ? 'OK' : `${r.code}: ${r.message}`;
+  const ta = document.getElementById('sched');
+  const diag = document.getElementById('diag');
+  if (ta.value !== sched0){ diag.textContent = 'Есть несохранённые правки — сначала «Сохранить», проверка идёт по диску.'; return; }
+  const r = await j('POST','/api/validate',{content: await mainContent()}).then(r=>r.json());
+  diag.textContent = r.ok ? 'OK (главный файл, по диску)' : `${r.code}: ${r.message}`;
 }
 async function doSave(){
   const ta = document.getElementById('sched');
-  const r = await j('POST','/api/schedule',{content:ta.value});
-  document.getElementById('diag').textContent = r.ok ? 'Сохранено' : await r.text();
-  if (r.ok){ sched0 = ta.value; ta.dataset.loaded = '1'; document.getElementById('dirty').hidden = true; }
+  const diag = document.getElementById('diag');
+  if (!curFile){ diag.textContent = 'Нет файла.'; return; }
+  const s = await j('POST','/api/files',{path: curFile, content: ta.value});
+  if (!s.ok){ diag.textContent = await s.text(); return; }
+  sched0 = ta.value;
+  document.getElementById('dirty').hidden = true;
+  const r = await j('POST','/api/validate',{content: await mainContent()}).then(r=>r.json());
+  diag.textContent = r.ok ? 'Сохранено, расписание OK' : `Сохранено, но расписание битое: ${r.code}: ${r.message}`;
   refresh();
 }
 async function doLogout(){ await j('POST','/api/logout'); location.reload(); }
