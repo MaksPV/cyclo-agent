@@ -1,8 +1,7 @@
 # Пример конфига cyclo-agent. Путь по умолчанию: /etc/cyclo-agent/agent.toml
-# schedule — путь до исполняемого файла расписания (он же база для use).
+# schedule — единственный ключ пути: каталог выводится из него сам
+# (абсолютный — как есть, относительный — от текущей директории).
 schedule = "/etc/cyclo-agent/schedule.cyclo"
-# directory = "/etc/cyclo-agent"      # альтернатива: база + имя файла
-# schedule_file = "schedule.cyclo"    # имя .cyclo без путей
 db = "/var/lib/cyclo-agent/agent.db"
 # web = "127.0.0.1:8080"  # без ключа — демон без веба
 poll_secs = 10

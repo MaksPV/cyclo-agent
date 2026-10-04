@@ -105,6 +105,7 @@ async fn status(State(app): State<App>, cookies: Cookies) -> impl IntoResponse {
         "schedule_error": st.error,
         "schedule_name": st.name,
         "schedule_path": app.cfg.schedule_path().to_string_lossy(),
+        "schedule": app.cfg.schedule_path().to_string_lossy(),
         "directory": app.cfg.directory.to_string_lossy(),
         "schedule_file": app.cfg.schedule_file,
         "concurrency": app.cfg.concurrency,
@@ -361,22 +362,20 @@ async fn get_config(State(app): State<App>, cookies: Cookies) -> impl IntoRespon
     }
     let cfg = app.shared.read().await.clone();
     Json(serde_json::json!({
-        "directory": cfg.directory.to_string_lossy(),
-        "schedule_file": cfg.schedule_file,
+        "schedule": cfg.schedule_path().to_string_lossy(),
         "retention_days": cfg.retention_days,
         "retention_max_rows": cfg.retention_max_rows,
         "concurrency": cfg.concurrency,
         "lookahead_secs": cfg.lookahead_secs,
         "config_source": cfg.config_source.map(|p| p.to_string_lossy().into_owned()),
-        "restart_required": ["directory", "schedule_file", "concurrency"],
+        "restart_required": ["schedule", "concurrency"],
     }))
     .into_response()
 }
 
 #[derive(serde::Deserialize, Default)]
 struct ConfigBody {
-    directory: Option<String>,
-    schedule_file: Option<String>,
+    schedule: Option<String>,
     retention_days: Option<u64>,
     retention_max_rows: Option<u64>,
     concurrency: Option<usize>,
@@ -394,22 +393,21 @@ async fn save_config(
         return StatusCode::UNAUTHORIZED.into_response();
     }
     let mut cfg = app.shared.read().await.clone();
-    if let Some(d) = b.directory {
-        if d.is_empty() || d.len() > 1024 || d.contains('\0') {
-            return (StatusCode::BAD_REQUEST, "bad directory".to_owned()).into_response();
+    // Путь один: schedule. Резолв и сплит — только в split_schedule.
+    if let Some(s) = b.schedule {
+        if s.is_empty() || s.len() > 1024 || s.contains('\0') {
+            return (StatusCode::BAD_REQUEST, "bad schedule".to_owned()).into_response();
         }
-        cfg.directory = std::path::PathBuf::from(d);
-    }
-    if let Some(f) = b.schedule_file {
-        if f.is_empty() || f.len() > 256 || f.contains(['/', '\\', '\0']) || !f.ends_with(".cyclo")
-        {
+        let (dir, file) = crate::config::Config::split_schedule(std::path::PathBuf::from(&s));
+        if !file.ends_with(".cyclo") {
             return (
                 StatusCode::BAD_REQUEST,
-                "schedule_file: имя .cyclo без путей".to_owned(),
+                "schedule: нужен .cyclo-файл".to_owned(),
             )
                 .into_response();
         }
-        cfg.schedule_file = f;
+        cfg.directory = dir;
+        cfg.schedule_file = file;
     }
     if let Some(v) = b.retention_days {
         cfg.retention_days = v.clamp(1, 3650);
@@ -433,16 +431,13 @@ async fn save_config(
         .and_then(|t| t.parse().ok())
         .unwrap_or(toml::Value::Table(toml::map::Map::new()));
     if let Some(table) = doc.as_table_mut() {
-        // Легаси-ключ schedule (полный путь) удаляем: живут directory+schedule_file,
-        // иначе при рестарте он перетрёт directory.
-        table.remove("schedule");
+        // Путь один: живёт ключ schedule, легаси directory/schedule_file удаляем,
+        // иначе при рестарте они перетрут schedule.
+        table.remove("directory");
+        table.remove("schedule_file");
         table.insert(
-            "directory".to_owned(),
-            toml::Value::String(cfg.directory.to_string_lossy().into_owned()),
-        );
-        table.insert(
-            "schedule_file".to_owned(),
-            toml::Value::String(cfg.schedule_file.clone()),
+            "schedule".to_owned(),
+            toml::Value::String(cfg.schedule_path().to_string_lossy().into_owned()),
         );
         table.insert(
             "retention_days".to_owned(),
@@ -471,8 +466,7 @@ async fn save_config(
     }
     cfg.config_source = Some(dest);
     *app.shared.write().await = cfg;
-    Json(serde_json::json!({"restart_required": ["directory", "schedule_file", "concurrency"]}))
-        .into_response()
+    Json(serde_json::json!({"restart_required": ["schedule", "concurrency"]})).into_response()
 }
 
 /// Корень файлов расписания: настроенная рабочая директория.

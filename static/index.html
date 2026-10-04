@@ -186,7 +186,7 @@ canvas.chart{width:100%;height:170px;display:block}
         <label class="muted">lookahead, с<br><input id="s-look" type="number" style="width:6em"></label></div>
         <div class="row"><button class="primary" onclick="saveCfg()">Сохранить настройки</button></div>
         <div id="cfgmsg" class="muted" style="margin-top:.5em"></div>
-        <div class="muted" style="margin-top:.5em">Лимиты хранения применяются без рестарта; директория, файл и параллельность — после рестарта демона.</div>
+        <div class="muted" style="margin-top:.5em">Лимиты хранения применяются без рестарта; путь расписания и параллельность — после рестарта демона.</div>
       </div>
       <div class="card"><h2>Сессия</h2>
         <div id="who2" style="margin-bottom:.6em"></div>
@@ -252,16 +252,21 @@ async function refresh(){
 async function loadCfg(){
   const c = await fetch('/api/config').then(r=>r.json());
   if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
-  document.getElementById('s-dir').value = c.directory || '';
-  document.getElementById('s-file').value = c.schedule_file || '';
+  // Сервер отдаёт один schedule; раскладываем по двум полям для показа.
+  const sch = c.schedule || '';
+  const i = Math.max(sch.lastIndexOf('/'), sch.lastIndexOf('\\'));
+  document.getElementById('s-dir').value = i >= 0 ? sch.slice(0, i) : '';
+  document.getElementById('s-file').value = i >= 0 ? sch.slice(i+1) : sch;
   document.getElementById('s-days').value = c.retention_days ?? '';
   document.getElementById('s-rows').value = c.retention_max_rows ?? '';
   document.getElementById('s-conc').value = c.concurrency ?? '';
   document.getElementById('s-look').value = c.lookahead_secs ?? '';
 }
 async function saveCfg(btn){
-  const b = {directory: document.getElementById('s-dir').value,
-    schedule_file: document.getElementById('s-file').value,
+  // Два поля склеиваем в один schedule — сервер больше ничего не режет.
+  const dir = document.getElementById('s-dir').value.trim().replace(/[\\/]+$/, '');
+  const file = document.getElementById('s-file').value.trim();
+  const b = {schedule: dir ? dir + '/' + file : file,
     retention_days: +document.getElementById('s-days').value || undefined,
     retention_max_rows: +document.getElementById('s-rows').value || undefined,
     concurrency: +document.getElementById('s-conc').value || undefined,

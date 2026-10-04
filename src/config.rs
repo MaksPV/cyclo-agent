@@ -27,6 +27,30 @@ impl Config {
     pub fn schedule_path(&self) -> PathBuf {
         self.directory.join(&self.schedule_file)
     }
+
+    /// Единственный сплит пути расписания на (каталог, имя файла).
+    /// Абсолютный — как есть; относительный — от текущей директории
+    /// (голое имя — файл в текущей). Больше путь никто не трогает.
+    pub fn split_schedule(p: PathBuf) -> (PathBuf, String) {
+        let abs = if p.is_absolute() {
+            p
+        } else {
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join(p)
+        };
+        let file = abs
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("schedule.cyclo")
+            .to_owned();
+        let dir = abs
+            .parent()
+            .filter(|d| !d.as_os_str().is_empty())
+            .map(|d| d.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."));
+        (dir, file)
+    }
 }
 
 impl Default for Config {
@@ -50,11 +74,9 @@ impl Default for Config {
 
 #[derive(Debug, Default, serde::Deserialize)]
 struct FileCfg {
-    /// Легаси: полный путь до файла (с сепараторами — режем на directory+file,
-    /// голое имя — schedule_file).
+    /// Единственный ключ пути: полный путь до файла (абсолютный — как есть,
+    /// относительный — от текущей директории). Каталог выводится из пути.
     schedule: Option<PathBuf>,
-    directory: Option<PathBuf>,
-    schedule_file: Option<String>,
     db: Option<PathBuf>,
     web: Option<String>,
     dashboards: Option<PathBuf>,
@@ -83,26 +105,11 @@ impl Config {
             if let Ok(text) = std::fs::read_to_string(&c) {
                 source = Some(c);
                 if let Ok(f) = toml::from_str::<FileCfg>(&text) {
-                    // Порядок: directory, затем schedule (файл поверх базы).
-                    if let Some(v) = f.directory {
-                        cfg.directory = v;
-                    }
+                    // Путь один: schedule, всё остальное выводится из него.
                     if let Some(v) = f.schedule {
-                        if v.components().count() > 1 {
-                            if let Some(parent) = v.parent() {
-                                if !parent.as_os_str().is_empty() {
-                                    cfg.directory = parent.to_path_buf();
-                                }
-                            }
-                            if let Some(name) = v.file_name().and_then(|n| n.to_str()) {
-                                cfg.schedule_file = name.to_owned();
-                            }
-                        } else if let Some(name) = v.to_str() {
-                            cfg.schedule_file = name.to_owned();
-                        }
-                    }
-                    if let Some(v) = f.schedule_file {
-                        cfg.schedule_file = v;
+                        let (dir, file) = Self::split_schedule(v);
+                        cfg.directory = dir;
+                        cfg.schedule_file = file;
                     }
                     if let Some(v) = f.db {
                         cfg.db = v;

@@ -25,31 +25,15 @@ struct Cli {
     cmd: Cmd,
 }
 
-/// Разложить путь до файла на (directory, file).
-fn split_schedule(p: PathBuf) -> (PathBuf, String) {
-    let file = p
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("schedule.cyclo")
-        .to_owned();
-    let dir = p
-        .parent()
-        .filter(|d| !d.as_os_str().is_empty())
-        .map(|d| d.to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("."));
-    (dir, file)
-}
-
 #[derive(Subcommand)]
 enum Cmd {
     /// Запустить планировщик (без --web — без веб-морды).
     Run {
-        /// Путь до файла расписания (исполняемый файл + база для use).
+        /// Путь до исполняемого .cyclo-файла: абсолютный — как есть,
+        /// относительный — от текущей директории (голое имя — файл в текущей).
+        /// Каталог для use выводится из пути.
         #[arg(long)]
         schedule: Option<PathBuf>,
-        /// Рабочая директория расписания (перекрывает каталог из --schedule).
-        #[arg(long)]
-        directory: Option<PathBuf>,
         #[arg(long)]
         db: Option<PathBuf>,
         /// Адрес веб-морды, например 127.0.0.1:8080. Без флага — только демон.
@@ -82,24 +66,16 @@ async fn main() {
         }
         Cmd::Run {
             schedule,
-            directory,
             db,
             web,
             dashboards,
         } => {
             let mut cfg = config::Config::load(cli.config);
+            // Путь один: --schedule. Резолв и сплит — только в split_schedule.
             if let Some(v) = schedule {
-                let (dir, file) = split_schedule(v);
-                // Голое имя без каталога — файл в directory (флаг/конфиг/текущая).
-                if dir.as_os_str() == "." && directory.is_none() {
-                    cfg.schedule_file = file;
-                } else {
-                    cfg.directory = dir;
-                    cfg.schedule_file = file;
-                }
-            }
-            if let Some(v) = directory {
-                cfg.directory = v;
+                let (dir, file) = config::Config::split_schedule(v);
+                cfg.directory = dir;
+                cfg.schedule_file = file;
             }
             if let Some(v) = db {
                 cfg.db = v;
