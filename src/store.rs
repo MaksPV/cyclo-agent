@@ -233,6 +233,14 @@ impl Store {
         .unwrap_or_default()
     }
 
+    pub fn prune_count(&self, max_rows: u64) {
+        let _ = self.lock().execute(
+            "DELETE FROM runs WHERE id NOT IN \
+             (SELECT id FROM runs ORDER BY id DESC LIMIT ?)",
+            params![max_rows.max(1000) as i64],
+        );
+    }
+
     pub fn cleanup(&self, older_than_ms: i64) {
         let _ = self.lock().execute(
             "DELETE FROM runs WHERE scheduled_at<?",

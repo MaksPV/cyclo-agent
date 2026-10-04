@@ -99,12 +99,14 @@ pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
         <button class="primary" onclick="doSave()">Сохранить</button>
       </div>
       <div id="diag"></div>
-      <details><summary>Туториал: как писать код</summary><pre class="cheat">1. Скелет: точка (куда), цикл (кусок времени), корень (сутки).
-  point JOB { actions = [fire]; }
-  cycle RUN(job) duration = 1m { 0m: JOB.fire() {...}; }
-  root_cycle start_time = "2026-01-01T00:00:00", duration = 24h { ... }
+      <details><summary>Туториал: агент и язык</summary><pre class="cheat">Синтаксис самого Cyclorithm — в вики: https://makspv.github.io/cyclorithm/
+Здесь — только связка с агентом.
 
-2. Строка корня = запуск. Агент исполняет только строки с cmd/check:
+1. Исполняется ОДИН файл (дефолт schedule.cyclo в рабочей директории,
+  меняется в Настройках). Остальные .cyclo рядом — модули для use,
+  schedule-блок в них запрещён (иначе schedule-in-import).
+
+2. Исполняется только строка с cmd/check в action_attrs:
   3h: RUN({"cmd": "/bin/echo", "args": ["backup"], "tags": ["backup"], "timeout_s": 1800});
 
 3. Виды задач (циклы-обёртки делить по видам: блок вычисляет
@@ -114,24 +116,33 @@ pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
   tcp:  {"check": "tcp", "host": ..., "port": ...}
   общее: "tags": ["web"], "timeout_s": 10.
 
-4. Повторы: repeat N — ровно N стыков; fill — до конца родителя:
+4. Периодика: repeat N — ровно N стыков; fill — до конца родителя:
   0h: fill HOURLY(...);  [workday(at)] 8h: repeat 11 HOURLY(...);
 
-5. Условия в []: workday(at), day_of_week(at) == 1, свои предикаты:
-  pred business_hours(at) = hour(at) &gt;= 9 and hour(at) &lt; 18;
+5. Условия в [] — предикаты языка и свои из библиотек:
+  use "libs/x.cyclo" (путь от директории импортирующего файла).
 
-6. Библиотеки: use "libs/x.cyclo" (путь от директории файла);
-  в либе только pred/const/таблицы, schedule-блок запрещён
-  (иначе schedule-in-import). Чужой файл по URL — кнопкой
-  «Вставить по URL» (качает браузер, дальше выбрать файл и сохранить).
+6. Время наивное = UTC. Опоздание &gt;60с не исполняется (skipped).
+  Точность срабатывания — миллисекунды (started_at − scheduled_at в runs).
 
-7. Длительности: ms s m h d w. Полный живой пример — examples/full.cyclo.</pre></details>
+7. Полные примеры: examples/schedule.cyclo (стартер),
+  examples/demo.cyclo, examples/checks.cyclo, examples/full.cyclo.</pre></details>
     </div>
   </section>
 
   <section id="v-settings" hidden>
     <div class="grid2">
-      <div class="card"><h2>Сервер</h2><div id="cfg" class="muted"></div></div>
+      <div class="card"><h2>Сервер</h2>
+        <div class="row" style="margin-bottom:.5em"><label class="muted">рабочая директория<br><input id="s-dir" style="width:22em"></label></div>
+        <div class="row" style="margin-bottom:.5em"><label class="muted">исполняемый файл<br><input id="s-file" style="width:14em"></label></div>
+        <div class="row" style="margin-bottom:.5em"><label class="muted">хранить, дней<br><input id="s-days" type="number" style="width:7em"></label>
+        <label class="muted">хранить, строк<br><input id="s-rows" type="number" style="width:9em"></label></div>
+        <div class="row" style="margin-bottom:.5em"><label class="muted">параллельность<br><input id="s-conc" type="number" style="width:6em"></label>
+        <label class="muted">lookahead, с<br><input id="s-look" type="number" style="width:6em"></label></div>
+        <div class="row"><button class="primary" onclick="saveCfg()">Сохранить настройки</button></div>
+        <div id="cfgmsg" class="muted" style="margin-top:.5em"></div>
+        <div class="muted" style="margin-top:.5em">Лимиты хранения применяются без рестарта; директория, файл и параллельность — после рестарта демона.</div>
+      </div>
       <div class="card"><h2>Сессия</h2>
         <div id="who" style="margin-bottom:.6em"></div>
         <button onclick="doLogout()">Выйти</button>
@@ -153,7 +164,7 @@ pre.cheat{font-family:var(--mono);font-size:12px;white-space:pre-wrap}
 let cur = 'events', sched0 = '';
 function themeInit(){ document.documentElement.dataset.theme = localStorage.getItem('theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); }
 function toggleTheme(){ const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = t; localStorage.setItem('theme', t); }
-function tab(n){ cur = n; for (const t of ['events','dash','editor','settings']){ document.getElementById('v-'+t).hidden = t !== n; document.getElementById('t-'+t).classList.toggle('on', t === n); } if (n === 'events'){ loadRuns(); loadNext(); } if (n === 'dash'){ loadDash(); } if (n === 'editor'){ loadSched(); } }
+function tab(n){ cur = n; for (const t of ['events','dash','editor','settings']){ document.getElementById('v-'+t).hidden = t !== n; document.getElementById('t-'+t).classList.toggle('on', t === n); } if (n === 'events'){ loadRuns(); loadNext(); } if (n === 'dash'){ loadDash(); } if (n === 'editor'){ loadSched(); } if (n === 'settings'){ loadCfg(); } }
 const j = (m,u,b)=>fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
 async function refresh(){
   const st = await fetch('/api/status').then(r=>r.json());
@@ -168,6 +179,29 @@ async function refresh(){
   document.getElementById('cfg').innerHTML = `расписание: ${st.schedule_path}<br>concurrency: ${st.concurrency}<br>lookahead: ${st.lookahead_secs}s<br>retention: ${st.retention_days} дн.`;
   document.getElementById('who').textContent = 'вошли как ' + (st.login || '?');
   if (cur === 'events'){ loadRuns(); loadNext(); }
+  if (cur === 'settings'){ loadCfg(); }
+}
+async function loadCfg(){
+  const c = await fetch('/api/config').then(r=>r.json());
+  if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+  document.getElementById('s-dir').value = c.directory || '';
+  document.getElementById('s-file').value = c.schedule_file || '';
+  document.getElementById('s-days').value = c.retention_days ?? '';
+  document.getElementById('s-rows').value = c.retention_max_rows ?? '';
+  document.getElementById('s-conc').value = c.concurrency ?? '';
+  document.getElementById('s-look').value = c.lookahead_secs ?? '';
+}
+async function saveCfg(){
+  const b = {directory: document.getElementById('s-dir').value,
+    schedule_file: document.getElementById('s-file').value,
+    retention_days: +document.getElementById('s-days').value || undefined,
+    retention_max_rows: +document.getElementById('s-rows').value || undefined,
+    concurrency: +document.getElementById('s-conc').value || undefined,
+    lookahead_secs: +document.getElementById('s-look').value || undefined};
+  const r = await j('POST','/api/config',b);
+  document.getElementById('cfgmsg').textContent = r.ok
+    ? 'Сохранено. Директория/файл/параллельность — только после рестарта демона.'
+    : await r.text();
 }
 async function setup(){ const l=v('l'),p=v('p'),c=v('c');
   const r = await j('POST','/api/setup',{login:l,password:p,confirm:c});
@@ -253,7 +287,7 @@ async function doValidate(){
   const diag = document.getElementById('diag');
   if (ta.value !== sched0){ diag.textContent = 'Есть несохранённые правки — сначала «Сохранить», проверка идёт по диску.'; return; }
   const r = await j('POST','/api/validate',{content: await mainContent()}).then(r=>r.json());
-  diag.textContent = r.ok ? 'OK (главный файл, по диску)' : `${r.code}: ${r.message}`;
+  diag.textContent = r.ok ? 'OK (главный файл, по диску)' : fmtDiag(r);
 }
 async function doSave(){
   const ta = document.getElementById('sched');
@@ -264,7 +298,7 @@ async function doSave(){
   sched0 = ta.value;
   document.getElementById('dirty').hidden = true;
   const r = await j('POST','/api/validate',{content: await mainContent()}).then(r=>r.json());
-  diag.textContent = r.ok ? 'Сохранено, расписание OK' : `Сохранено, но расписание битое: ${r.code}: ${r.message}`;
+  diag.textContent = r.ok ? 'Сохранено, расписание OK' : `Сохранено, но расписание битое: ${fmtDiag(r)}`;
   refresh();
 }
 async function doLogout(){ await j('POST','/api/logout'); location.reload(); }
@@ -274,6 +308,11 @@ async function doPasswd(){
   if (r.ok){ document.getElementById('pw0').value = document.getElementById('pw1').value = document.getElementById('pw2').value = ''; }
 }
 function esc(s){ return String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fmtDiag(r){
+  if (r.ok) return 'OK';
+  if (r.code === 'schedule-in-import') return 'schedule-in-import: schedule-блок только в главном файле (schedule.cyclo), в модулях — лишь pred/const/таблицы';
+  return `${r.code}: ${r.message}`;
+}
 let dashdef = null, dashmeta = {tags:[], kinds:[], jobs:[], metrics:['latency_ms','up']};
 async function loadDash(){
   dashdef = await fetch('/api/dashboards').then(r=>r.json());

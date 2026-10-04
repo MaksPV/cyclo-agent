@@ -17,6 +17,8 @@ use crate::store::Store;
 pub struct App {
     pub store: Store,
     pub cfg: Config,
+    /// Делимый конфиг: планировщик читает retention-лимиты без рестарта.
+    pub shared: Arc<tokio::sync::RwLock<Config>>,
     pub status: Arc<RwLock<SchedStatus>>,
     /// Неудачные логины по IP для rate limit.
     pub login_fails: Arc<std::sync::Mutex<HashMap<std::net::IpAddr, Vec<std::time::Instant>>>>,
@@ -63,6 +65,10 @@ pub fn router(app: App) -> axum::Router {
         .route("/api/series", axum::routing::get(series))
         .route("/api/meta", axum::routing::get(meta))
         .route(
+            "/api/config",
+            axum::routing::get(get_config).post(save_config),
+        )
+        .route(
             "/api/files",
             axum::routing::get(get_file)
                 .post(save_file)
@@ -98,10 +104,13 @@ async fn status(State(app): State<App>, cookies: Cookies) -> impl IntoResponse {
         "schedule_valid": st.valid,
         "schedule_error": st.error,
         "schedule_name": st.name,
-        "schedule_path": app.cfg.schedule.to_string_lossy(),
+        "schedule_path": app.cfg.schedule_path().to_string_lossy(),
+        "directory": app.cfg.directory.to_string_lossy(),
+        "schedule_file": app.cfg.schedule_file,
         "concurrency": app.cfg.concurrency,
         "lookahead_secs": app.cfg.lookahead_secs,
         "retention_days": app.cfg.retention_days,
+        "retention_max_rows": app.cfg.retention_max_rows,
         "now": now_ms(),
     }))
 }
@@ -262,7 +271,7 @@ async fn next(
         .clamp(1, MAX_WITHIN_SECS)
         * 1000;
     match next_jobs(
-        &app.cfg.schedule,
+        &app.cfg.schedule_path(),
         now_ms(),
         within,
         q.n.unwrap_or(50).min(500),
@@ -276,7 +285,7 @@ async fn get_schedule(State(app): State<App>, cookies: Cookies) -> impl IntoResp
     if authed(&cookies, &app).is_none() {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    match std::fs::read_to_string(&app.cfg.schedule) {
+    match std::fs::read_to_string(app.cfg.schedule_path()) {
         Ok(t) => Json(serde_json::json!({"content": t})).into_response(),
         Err(e) => (StatusCode::NOT_FOUND, e.to_string()).into_response(),
     }
@@ -334,13 +343,130 @@ fn tags_of(run: &crate::store::Run) -> Vec<String> {
     serde_json::from_str(&run.tags).unwrap_or_default()
 }
 
-/// Корень файлов расписания: директория главного файла.
+/// Настройки: чтение. restart_required — ключи, требующие рестарта демона.
+async fn get_config(State(app): State<App>, cookies: Cookies) -> impl IntoResponse {
+    if authed(&cookies, &app).is_none() {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let cfg = app.shared.read().await.clone();
+    Json(serde_json::json!({
+        "directory": cfg.directory.to_string_lossy(),
+        "schedule_file": cfg.schedule_file,
+        "retention_days": cfg.retention_days,
+        "retention_max_rows": cfg.retention_max_rows,
+        "concurrency": cfg.concurrency,
+        "lookahead_secs": cfg.lookahead_secs,
+        "config_source": cfg.config_source.map(|p| p.to_string_lossy().into_owned()),
+        "restart_required": ["directory", "schedule_file", "concurrency"],
+    }))
+    .into_response()
+}
+
+#[derive(serde::Deserialize, Default)]
+struct ConfigBody {
+    directory: Option<String>,
+    schedule_file: Option<String>,
+    retention_days: Option<u64>,
+    retention_max_rows: Option<u64>,
+    concurrency: Option<usize>,
+    lookahead_secs: Option<u64>,
+}
+
+/// Настройки: запись распознанных ключей в agent.toml + живое обновление.
+/// retention-лимиты применяются без рестарта, остальное — после рестарта.
+async fn save_config(
+    State(app): State<App>,
+    cookies: Cookies,
+    Json(b): Json<ConfigBody>,
+) -> impl IntoResponse {
+    if authed(&cookies, &app).is_none() {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let mut cfg = app.shared.read().await.clone();
+    if let Some(d) = b.directory {
+        if d.is_empty() || d.len() > 1024 || d.contains('\0') {
+            return (StatusCode::BAD_REQUEST, "bad directory".to_owned()).into_response();
+        }
+        cfg.directory = std::path::PathBuf::from(d);
+    }
+    if let Some(f) = b.schedule_file {
+        if f.is_empty() || f.len() > 256 || f.contains(['/', '\\', '\0']) || !f.ends_with(".cyclo")
+        {
+            return (
+                StatusCode::BAD_REQUEST,
+                "schedule_file: имя .cyclo без путей".to_owned(),
+            )
+                .into_response();
+        }
+        cfg.schedule_file = f;
+    }
+    if let Some(v) = b.retention_days {
+        cfg.retention_days = v.clamp(1, 3650);
+    }
+    if let Some(v) = b.retention_max_rows {
+        cfg.retention_max_rows = v.clamp(1000, 100_000_000);
+    }
+    if let Some(v) = b.concurrency {
+        cfg.concurrency = v.clamp(1, 64);
+    }
+    if let Some(v) = b.lookahead_secs {
+        cfg.lookahead_secs = v.clamp(5, 3600);
+    }
+    // Пишем обратно в TOML: распознанные ключи, неизвестные сохраняем.
+    let dest = cfg
+        .config_source
+        .clone()
+        .unwrap_or_else(|| std::path::PathBuf::from("./agent.toml"));
+    let mut doc: toml::Value = std::fs::read_to_string(&dest)
+        .ok()
+        .and_then(|t| t.parse().ok())
+        .unwrap_or(toml::Value::Table(toml::map::Map::new()));
+    if let Some(table) = doc.as_table_mut() {
+        // Легаси-ключ schedule (полный путь) удаляем: живут directory+schedule_file,
+        // иначе при рестарте он перетрёт directory.
+        table.remove("schedule");
+        table.insert(
+            "directory".to_owned(),
+            toml::Value::String(cfg.directory.to_string_lossy().into_owned()),
+        );
+        table.insert(
+            "schedule_file".to_owned(),
+            toml::Value::String(cfg.schedule_file.clone()),
+        );
+        table.insert(
+            "retention_days".to_owned(),
+            toml::Value::Integer(cfg.retention_days as i64),
+        );
+        table.insert(
+            "retention_max_rows".to_owned(),
+            toml::Value::Integer(cfg.retention_max_rows as i64),
+        );
+        table.insert(
+            "concurrency".to_owned(),
+            toml::Value::Integer(cfg.concurrency as i64),
+        );
+        table.insert(
+            "lookahead_secs".to_owned(),
+            toml::Value::Integer(cfg.lookahead_secs as i64),
+        );
+    }
+    if let Some(dir) = dest.parent() {
+        if !dir.as_os_str().is_empty() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+    }
+    if let Err(e) = std::fs::write(&dest, toml::to_string(&doc).unwrap_or_default()) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
+    }
+    cfg.config_source = Some(dest);
+    *app.shared.write().await = cfg;
+    Json(serde_json::json!({"restart_required": ["directory", "schedule_file", "concurrency"]}))
+        .into_response()
+}
+
+/// Корень файлов расписания: настроенная рабочая директория.
 fn files_base(app: &App) -> std::path::PathBuf {
-    app.cfg
-        .schedule
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
+    app.cfg.directory.clone()
 }
 
 /// Относительный путь внутри базы без escapes: только .cyclo, без .. и абсолютных.
@@ -417,13 +543,7 @@ async fn get_file(
         }
     }
     out.sort();
-    let main = app
-        .cfg
-        .schedule
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    Json(serde_json::json!({"main": main, "files": out})).into_response()
+    Json(serde_json::json!({"main": app.cfg.schedule_file, "files": out})).into_response()
 }
 
 #[derive(serde::Deserialize)]
@@ -481,7 +601,7 @@ async fn delete_file(
         Err(e) => return (StatusCode::BAD_REQUEST, e).into_response(),
     };
     let dest = files_base(&app).join(&p);
-    if same_file(&dest, &app.cfg.schedule) {
+    if same_file(&dest, &app.cfg.schedule_path()) {
         return (
             StatusCode::FORBIDDEN,
             "cannot delete main schedule".to_owned(),
@@ -806,7 +926,7 @@ async fn save_schedule(
     if authed(&cookies, &app).is_none() {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    if let Err(e) = check_content(&b.content, &app.cfg.schedule) {
+    if let Err(e) = check_content(&b.content, &app.cfg.schedule_path()) {
         let code = if e.starts_with("schedule too large") {
             StatusCode::PAYLOAD_TOO_LARGE
         } else {
@@ -814,12 +934,12 @@ async fn save_schedule(
         };
         return (code, e).into_response();
     }
-    if let Some(dir) = app.cfg.schedule.parent() {
+    if let Some(dir) = app.cfg.schedule_path().parent().map(|d| d.to_path_buf()) {
         if !dir.as_os_str().is_empty() {
             let _ = std::fs::create_dir_all(dir);
         }
     }
-    match std::fs::write(&app.cfg.schedule, &b.content) {
+    match std::fs::write(app.cfg.schedule_path(), &b.content) {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
@@ -833,7 +953,7 @@ async fn validate(
     if authed(&cookies, &app).is_none() {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    match check_content(&b.content, &app.cfg.schedule) {
+    match check_content(&b.content, &app.cfg.schedule_path()) {
         Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
         Err(e) => {
             let (code, message) = match e.split_once(": ") {

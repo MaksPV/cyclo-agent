@@ -25,14 +25,21 @@ cargo build --release
 иначе `/etc/cyclo-agent/agent.toml`) — см. `agent.toml.example`:
 
 ```toml
-schedule = "/etc/cyclo-agent/schedule.cyclo"
+schedule = "/etc/cyclo-agent/schedule.cyclo"  # путь до исполняемого файла
 db = "/var/lib/cyclo-agent/agent.db"
 # web = "127.0.0.1:8080"  # без ключа — демон без веба
 poll_secs = 10        # сейчас не используется (сон до события)
 lookahead_secs = 60   # окно /api/next по умолчанию
 concurrency = 4
 retention_days = 90
+retention_max_rows = 1000000
 ```
+
+`schedule` — путь до файла (исполняемый + база для `use`); раскладывается
+на `directory` + `schedule_file` (имя `.cyclo` без путей). Хранение режется
+и по дням, и по числу строк. Настройки правятся и из морды
+(`GET/POST /api/config`; директория, файл, параллельность — после рестарта
+демона, лимиты хранения — без).
 
 ## Формат задач
 

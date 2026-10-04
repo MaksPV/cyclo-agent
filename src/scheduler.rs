@@ -57,7 +57,7 @@ pub async fn watch_file(path: PathBuf, notify: Arc<Notify>) {
 }
 
 pub async fn run_loop(
-    cfg: Config,
+    shared: Arc<RwLock<Config>>,
     store: Store,
     status: Arc<RwLock<SchedStatus>>,
     sem: Arc<Semaphore>,
@@ -68,10 +68,14 @@ pub async fn run_loop(
     // исполняем её без повторного запроса к ядру (экономим ~15мс) — свежесть
     // проверяем по mtime файла, дедуп — через UNIQUE(job_key).
     let mut pending: Vec<crate::jobs::Job> = vec![];
-    let mut pending_mtime = file_mtime(&cfg.schedule);
+    let sched0 = shared.read().await.schedule_path();
+    let mut pending_mtime = file_mtime(&sched0);
     loop {
+        // Конфиг делимый: retention-лимиты из настроек применяются без рестарта.
+        let cfg = shared.read().await.clone();
+        let sched = cfg.schedule_path();
         let now = now_ms();
-        let mtime = file_mtime(&cfg.schedule);
+        let mtime = file_mtime(&sched);
         // Окно с перекрытием 2с назад: сон срабатывает в T+мс, а `[now, …)`
         // событие ровно в T уже исключает.
         let from = now - 2_000;
@@ -80,7 +84,7 @@ pub async fn run_loop(
         } else {
             pending.clear();
             pending_mtime = mtime;
-            match read_schedule(&cfg.schedule) {
+            match read_schedule(&sched) {
                 Err(e) => {
                     *status.write().await = SchedStatus {
                         valid: false,
@@ -172,6 +176,7 @@ pub async fn run_loop(
             last_cleanup = now;
             let cutoff = now - cfg.retention_days as i64 * 86_400_000;
             store.cleanup(cutoff);
+            store.prune_count(cfg.retention_max_rows);
             store.delete_expired_sessions(now);
         }
         match next_at {
