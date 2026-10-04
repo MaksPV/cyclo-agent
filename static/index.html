@@ -164,7 +164,6 @@ async function refresh(){
   h.textContent = st.schedule_valid ? (st.schedule_name || 'ok') : 'ошибка';
   h.className = 'badge ' + (st.schedule_valid ? 'ok' : 'bad');
   document.getElementById('schedline').textContent = `${st.schedule_name || '?'} — valid=${st.schedule_valid} ${st.schedule_error || ''}`;
-  document.getElementById('cfg').innerHTML = `расписание: ${st.schedule_path}<br>concurrency: ${st.concurrency}<br>lookahead: ${st.lookahead_secs}s<br>retention: ${st.retention_days} дн.`;
   document.getElementById('who').textContent = 'вошли как ' + (st.login || '?');
   if (cur === 'events'){ loadRuns(); loadNext(); }
   if (cur === 'settings'){ loadCfg(); }
@@ -297,19 +296,27 @@ function fmtDiag(r){
 }
 let dashdef = null, dashmeta = {tags:[], kinds:[], jobs:[], metrics:['latency_ms','up']};
 async function loadDash(){
-  dashdef = await fetch('/api/dashboards').then(r=>r.json());
+  let def;
+  try { def = await fetch('/api/dashboards').then(r=>{ if (!r.ok) throw 0; return r.json(); }); }
+  catch(e){ return; }
+  dashdef = def;
   try { dashmeta = await fetch('/api/meta').then(r=>r.json()); } catch(e){}
   renderDashList(); dashClean();
   const box = document.getElementById('charts'); box.innerHTML = '';
   const to = Date.now();
   for (const [i, c] of (dashdef.charts||[]).entries()){
     const card = document.createElement('div'); card.className = 'card';
-    card.innerHTML = `<h2>${esc(c.title)}</h2><canvas width="940" height="170"></canvas><div class="muted">${esc(c.metric)} ${esc(c.agg||'avg')} · ${srcName(c)}</div>`;
+    card.innerHTML = `<h2>${esc(c.title)}</h2><canvas width="940" height="170"></canvas><div class="muted chartsub">${esc(c.metric)} ${esc(c.agg||'avg')} · ${srcName(c)}</div>`;
     box.appendChild(card);
-    const q = new URLSearchParams({metric:c.metric, agg:c.agg||'avg', to, from: to - (c.window_secs||86400)*1000});
-    if (c.tag) q.set('tag', c.tag); if (c.job) q.set('job', c.job); if (c.kind) q.set('kind', c.kind);
-    const s = await fetch('/api/series?'+q).then(r=>r.json());
-    drawChart(card.querySelector('canvas'), s.points||[], c.type||'line', c.metric);
+    const sub = card.querySelector('.chartsub');
+    try {
+      const q = new URLSearchParams({metric:c.metric, agg:c.agg||'avg', to, from: to - (c.window_secs||86400)*1000});
+      if (c.tag) q.set('tag', c.tag); if (c.job) q.set('job', c.job); if (c.kind) q.set('kind', c.kind);
+      const r = await fetch('/api/series?'+q);
+      if (!r.ok) throw 0;
+      const s = await r.json();
+      drawChart(card.querySelector('canvas'), s.points||[], c.type||'line', c.metric);
+    } catch(e){ if (sub) sub.textContent += ' — ошибка загрузки'; }
   }
 }
 function srcName(c){ return c.tag ? 'тег '+c.tag : c.job ? 'задача '+c.job : c.kind ? 'тип '+c.kind : 'всё'; }
@@ -320,13 +327,13 @@ function drawChart(cv, pts, type, metric){
   ctx.fillStyle = dark ? '#9a9aa0' : '#6b6b70';
   ctx.font = '11px system-ui,sans-serif';
   ctx.fillText(metric || '', 44, 12);
-  if (!vs.length){ ctx.fillText('нет данных', 44, 30); return; }
   const L = 44, B = 16, W = cv.width - L - 6, H = cv.height - B - 18;
+  ctx.strokeStyle = dark ? '#333336' : '#dddcd8'; ctx.beginPath();
+  ctx.moveTo(L, 16); ctx.lineTo(L, 16+H); ctx.lineTo(L+W, 16+H); ctx.stroke();
+  if (!vs.length){ ctx.fillText('нет данных', L + 8, 16 + H/2); return; }
   const mn = Math.min(...vs), mx = Math.max(...vs), span = (mx - mn) || 1;
   const X = i => pts.length < 2 ? L : L + i/(pts.length-1)*W;
   const Y = v => 16 + H - ((v-mn)/span)*H;
-  ctx.strokeStyle = dark ? '#333336' : '#dddcd8'; ctx.beginPath();
-  ctx.moveTo(L, 16); ctx.lineTo(L, 16+H); ctx.lineTo(L+W, 16+H); ctx.stroke();
   ctx.fillText(fmtN(mx), 2, 24); ctx.fillText(fmtN(mn), 2, 16+H);
   const ticks = Math.min(4, pts.length - 1);
   for (let k = 0; k <= ticks; k++){
@@ -372,7 +379,7 @@ function readDashTable(){
   const tb = document.getElementById('ctable');
   dashdef.charts = [...tb.querySelectorAll('tr[data-i]')].map(tr=>{
     const g = cl => tr.querySelector(cl).value, gi = cl => +tr.querySelector(cl).value || 0;
-    const c = {title: g('.f-title'), metric: g('.f-metric'), agg: g('.f-agg'), type: g('.f-type'), window_secs: gi('.f-win')};
+    const c = {title: g('.f-title'), metric: g('.f-metric'), agg: g('.f-agg'), type: g('.f-type'), window_secs: gi('.f-win') || 86400};
     const src = g('.f-src'), v = g('.f-srcv');
     if ((src === 'tag' || src === 'job' || src === 'kind') && v) c[src] = v;
     return c;
