@@ -58,10 +58,10 @@ td.cut{white-space:nowrap;max-width:22em;overflow:hidden;text-overflow:ellipsis}
 .scroll thead th{position:sticky;top:0;background:var(--card);z-index:1}
 .scroll tbody tr:hover{background:color-mix(in srgb, var(--fg) 6%, transparent)}
 .ok{color:var(--ok)} .fail,.timeout{color:var(--bad)} .skipped{color:var(--skip)}
-.pill{border-radius:2em;border:1px solid currentColor;padding:0 .6em;display:inline-block;font-size:.85em;white-space:nowrap}
-.pill.ok{color:var(--ok)}
-.pill.fail,.pill.timeout{color:var(--bad)}
-.pill.skipped{color:var(--skip)}
+.pill{border-radius:2em;padding:0 .6em;display:inline-block;font-size:.85em;white-space:nowrap;border:none}
+.pill.ok{color:var(--ok);background:color-mix(in srgb, var(--ok) 12%, transparent)}
+.pill.fail,.pill.timeout{color:var(--bad);background:color-mix(in srgb, var(--bad) 12%, transparent)}
+.pill.skipped{color:var(--skip);background:color-mix(in srgb, var(--skip) 12%, transparent)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 :focus:not(:focus-visible){outline:none}
 .chartwrap{position:relative}
@@ -543,9 +543,11 @@ function paintChart(cv, hover){
     const x = X(e.t);
     const bad = e.status === 'fail' || e.status === 'timeout';
     ctx.strokeStyle = e.status === 'ok' ? C.ok : bad ? C.bad : C.muted;
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(x, g.T); ctx.lineTo(x, g.T+g.h); ctx.stroke();
     ctx.fillStyle = ctx.strokeStyle;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.35;
+    ctx.beginPath(); ctx.moveTo(x, g.T); ctx.lineTo(x, g.T+g.h); ctx.stroke();
+    ctx.globalAlpha = 1;
     ctx.beginPath(); ctx.arc(x, g.T+2, 2, 0, 7); ctx.fill();
     st._mx.push({x, e});
   }

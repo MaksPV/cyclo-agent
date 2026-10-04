@@ -102,8 +102,8 @@
 
 - Красный — только аварии. Жёлтых варнингов нет и не будет.
 - **Один акцент на экран.** `--accent` несёт роль «кликни/смотри сюда».
-- Плашка `.pill` своих hex не имеет: `border-radius:2em`, рамка
-  `currentColor`, цвет наследует от статуса.
+- Плашка `.pill` своих hex не имеет: `border-radius:2em`, мягкая подложка
+  `color-mix(in srgb, <цвет статуса> 12%, transparent)`, рамок нет.
 
 ### 2.3. Шрифты
 
@@ -210,11 +210,13 @@ Canvas рисуется под `devicePixelRatio`. Логические коор
 Статусы — `.pill`:
 
 ```css
-.pill { border-radius:2em; border:1px solid currentColor; padding:0 .6em; }
-.pill.ok              { color: var(--ok); }
-.pill.fail, .timeout  { color: var(--bad); }
-.pill.skipped         { color: var(--skip); }
+.pill { border-radius:2em; padding:0 .6em; border:none; }
+.pill.ok              { color:var(--ok);  background:color-mix(in srgb, var(--ok) 12%, transparent); }
+.pill.fail, .timeout  { color:var(--bad); background:color-mix(in srgb, var(--bad) 12%, transparent); }
+.pill.skipped         { color:var(--skip); background:color-mix(in srgb, var(--skip) 12%, transparent); }
 ```
+
+Подложка вместо рамки: статусы видно, но они не кричат.
 
 ### 3.5. Редактор
 
@@ -353,7 +355,8 @@ Canvas рисуется под `devicePixelRatio`. Логические коор
 - Если в подписи есть источник событий (запуски), на графике рисуются
   **вертикальные маркеры** тех запусков, что попали в окно: цвет по статусу
   (`--bad` для `fail`/`timeout`, `--ok` для `ok`), `1px`, от оси до верха
-  поля. Наверху маркера — точка `2px`.
+  поля. Линия полупрозрачная (`globalAlpha 0.35`), наверху маркера — точка
+  `2px` полной яркости. Маркеры не должны спорить с линией данных.
 - **Hover по маркеру** (в пределах 4px по x) — тултип показывает событие:
   ```
   10:23:14
